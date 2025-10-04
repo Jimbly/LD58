@@ -7,25 +7,32 @@ import { autoAtlas } from 'glov/client/autoatlas';
 import { platformParameterGet } from 'glov/client/client_config';
 import * as engine from 'glov/client/engine';
 import { ALIGN } from 'glov/client/font';
+import { mousePos } from 'glov/client/input';
 import { netInit } from 'glov/client/net';
 import { spriteSetGet } from 'glov/client/sprite_sets';
 import {
   button,
   drawBox,
+  drawHBox,
+  panel,
   scaleSizes,
   setFontHeight,
+  setPanelPixelScale,
   uiGetFont,
+  uiSetPanelColor,
   uiTextHeight,
 } from 'glov/client/ui';
 import { randCreate } from 'glov/common/rand_alea';
+import { clamp } from 'glov/common/util';
 import { palette, palette_font } from './palette';
 
-const { floor } = Math;
+const { max, round, floor } = Math;
 
 const PAL_GREEN = 12;
 const PAL_YELLOW = 11;
-// const PAL_RED = 26;
+const PAL_RED = 26;
 const PAL_BLACK = 25;
+const PAL_WHITE = 19;
 
 
 window.Z = window.Z || {};
@@ -154,6 +161,29 @@ class GameState {
       next_up,
     };
   }
+
+  crafting = -1;
+  progress = 0;
+  quality = 0;
+  durability = 0;
+  // -2/-1 - malign
+  // 0/1 - equable
+  // 2/3 - benign
+  // 4 - exalted
+  temperament = 0;
+  cooldowns: number[] = [];
+  startCraft(index: number): void {
+    this.crafting = index;
+    this.progress = 0;
+    this.quality = 0;
+    this.durability = 100;
+    this.temperament = 1;
+    this.cooldowns = [];
+    for (let ii = 0; ii < 10; ++ii) {
+      this.cooldowns.push(0);
+    }
+  }
+
 }
 
 let game_state: GameState;
@@ -295,6 +325,171 @@ function drawOreCard(x: number, y: number, w: number, entry: OreEntry): number {
   return y;
 }
 
+
+const MAIN_PANEL = {
+  x: 49,
+  y: 20,
+  w: 222,
+  h: 138,
+};
+const TEMP = [
+  [PAL_RED, 'MALIGN'],
+  [PAL_WHITE + 1, 'EQUABLE'],
+  [PAL_GREEN, 'BENIGN'],
+  [PAL_YELLOW, 'EXALTED'],
+] as const;
+function stateCraft(dt: number): void {
+  let font = uiGetFont();
+  let text_height = uiTextHeight();
+  let black = palette[PAL_BLACK];
+  gl.clearColor(black[0], black[1], black[2], 1);
+
+  let { x, y } = MAIN_PANEL;
+
+  let { next_up } = game_state.data;
+  let { crafting, temperament } = game_state;
+
+  let target = next_up[crafting];
+  const PADTOP = 5;
+  const z = Z.UI;
+
+  x += 19;
+  y += PADTOP;
+
+  let y0 = y;
+  let w = NEXTUP_W;
+  y += 3;
+  y = drawOreCard(x, y, w, target);
+  y += 2;
+  panel({
+    x, y: y0,
+    w: NEXTUP_W,
+    h: y - y0,
+    sprite: autoAtlas('game', 'panel_inset'),
+    eat_clicks: false,
+  });
+
+  y += 6;
+  font.draw({
+    x, y, w,
+    align: ALIGN.HCENTER,
+    text: 'Temperament',
+  });
+  y += text_height - 1;
+
+  let temp = temperament < 0 ? 0 : temperament < 2 ? 1 : temperament < 4 ? 2 : 3;
+  font.draw({
+    color: palette_font[TEMP[temp][0]],
+    x, y, w,
+    align: ALIGN.HCENTER,
+    text: TEMP[temp][1],
+  });
+
+
+  x = MAIN_PANEL.x + 88;
+  y = MAIN_PANEL.y + PADTOP;
+  w = MAIN_PANEL.x + MAIN_PANEL.w - 6 - x;
+  const BAR_MAX_W = w - 4;
+  const BAR_SECTION_H = 25;
+  let { durability, progress, quality } = game_state;
+  ([
+    ['Durability', -1, durability, 'bar-red'],
+    ['Progress', -1, progress, 'bar-green'],
+    ['Quality', 0, quality, 'bar-cyan'],
+  ] as const).forEach(function (pair) {
+    drawHBox({
+      x, y, w,
+      h: BAR_SECTION_H,
+    }, autoAtlas('game', 'bar-bg'));
+
+    let v = pair[2];
+    let vw = clamp(3 + round(v/100 * (BAR_MAX_W - 3)), 3, v === 100 ? BAR_MAX_W : BAR_MAX_W - 1);
+
+    let text: string = pair[0];
+    if (text === 'Quality') {
+      v = quality = max(0, floor(mousePos()[0]));
+      let tier = floor(quality / 100);
+      text = `Quality (T${tier+1})`;
+      const GOAL_X = floor(BAR_MAX_W * 0.9);
+      // draw goal
+      drawHBox({
+        x: x + 2 + GOAL_X,
+        y: y + 15,
+        z: z + 1,
+        h: 8,
+        w: 3,
+      }, autoAtlas('game', 'bar-gold'));
+      // draw current progress
+      let bar_start = tier * 6;
+      let bar_left = GOAL_X - bar_start;
+      let v_left = v - tier * 100;
+      vw = clamp(3 + round(v_left/100 * (bar_left - 3)), 3, v === 100 ? bar_left : bar_left - 1);
+      let xx = x + 2;
+      for (let ii = 0; ii < tier; ++ii) {
+        drawHBox({
+          x: xx,
+          y: y + 15,
+          z: z + 1,
+          h: 8,
+          w: 3,
+        }, autoAtlas('game', pair[3]));
+        xx += 3;
+        drawHBox({
+          x: xx,
+          y: y + 15,
+          z: z + 1,
+          h: 8,
+          w: 3,
+        }, autoAtlas('game', 'bar-gold'));
+        xx += 3;
+      }
+      drawHBox({
+        x: x + 2 + bar_start,
+        y: y + 15,
+        z: z + 1,
+        h: 8,
+        w: vw,
+      }, autoAtlas('game', pair[3]));
+    } else {
+      drawHBox({
+        x: x + 2,
+        y: y + 15,
+        z: z + 1,
+        h: 8,
+        w: vw,
+      }, autoAtlas('game', pair[3]));
+    }
+
+    font.draw({
+      x: x + 2 + pair[1],
+      y: y - 1,
+      z: z + 1,
+      text: text,
+    });
+
+    font.draw({
+      x: x + w - 10,
+      y: y,
+      z: z + 1,
+      text: String(v),
+      align: ALIGN.HCENTER,
+    });
+
+
+    y += BAR_SECTION_H + 5;
+  });
+
+  panel({
+    ...MAIN_PANEL,
+    eat_clicks: false,
+  });
+}
+
+function stateCraftInit(index: number): void {
+  game_state.startCraft(index);
+  engine.setState(stateCraft);
+}
+
 function drawNextUp(): void {
   let font = uiGetFont();
   let text_height = uiTextHeight();
@@ -322,7 +517,7 @@ function drawNextUp(): void {
       base_name: 'button_blue',
       text: ' ',
     })) {
-      // TODO
+      stateCraftInit(ii);
     }
     y += 2;
   }
@@ -382,8 +577,13 @@ export function main(): void {
   // Perfect sizes for pixely modes
   scaleSizes(BUTTON_H / 32);
   setFontHeight(14);
+  uiSetPanelColor([1,1,1,1]);
+  setPanelPixelScale(1);
 
   init();
 
   engine.setState(statePrep);
+  if (engine.DEBUG) {
+    stateCraftInit(0);
+  }
 }

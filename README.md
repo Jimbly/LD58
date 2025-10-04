@@ -8,6 +8,7 @@ Ludum Dare 58 Entry by Jimbly - "Title TBD"
 
 Acknowledgements:
 * [HelvetiPixel font](https://www.pentacom.jp/pentacom/bitfontmaker2/gallery/?id=381) by pentacom
+* [ENDESGA-32 Palette](https://lospec.com/palette-list/endesga-32)
 
 Start with: `npm start` (after running `npm i` once)
 
