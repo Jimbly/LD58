@@ -183,7 +183,7 @@ const SKILLS: TSMap<SkillDef> = {
     name: 'Reinforce',
     // 50% less dur for next 4 steps, CD 14
     special: 'durability',
-    special_amount: 50,
+    special_amount: -50,
     special_duration: 4,
     cooldown: CDRARE,
   },
@@ -254,6 +254,20 @@ function defenseForType(gem: GemType): Record<ToolType, number> {
     };
   }
 }
+
+const TEMPERAMENT_BONUS = {
+  [-1]: -20,
+  0: 0,
+  1: 20,
+  2: 50,
+};
+
+const DEFENSE_REDUCTION = [
+  0,
+  -10,
+  -25,
+  -50,
+];
 
 class GameState {
   data: GameData;
@@ -362,8 +376,14 @@ class GameState {
   // 0 - equable
   // 1 - benign
   // 2 - exalted
-  temperament = 0;
+  temperament: -1 | 0 | 1 | 2 = 0;
   cooldowns: number[] = [];
+  specials: {
+    skill_idx: number;
+    special: 'progress' | 'quality' | 'durability' | 'pierce';
+    special_amount: number;
+    special_duration: number;
+  }[] = [];
   startCraft(index: number): void {
     rand_craft.reseed(rand_level.range(10000000));
     this.crafting = index;
@@ -375,6 +395,7 @@ class GameState {
     for (let ii = 0; ii < 10; ++ii) {
       this.cooldowns.push(0);
     }
+    this.specials = [];
   }
   finishCrafting(): void {
     let { durability, quality, crafting } = this;
@@ -392,17 +413,66 @@ class GameState {
     // todo: cycle next_up
     // todo: cycle requests that don't match what we just crafted
   }
-  activateSkill(skill_index: number): boolean {
-    let { skills } = this.data;
-    let { cooldowns, temperament } = this;
+  skillBonuses(skill_index: number): {
+    progress: number;
+    quality: number;
+    durability: number;
+  } {
+    let { skills, next_up } = this.data;
+    let { temperament, specials, crafting } = this;
     let skill_id = skills[skill_index];
     assert(skill_id);
+    let target = next_up[crafting];
+    let special_mul = {
+      progress: 1,
+      quality: 1,
+      durability: 1,
+      pierce: 1,
+    };
+    for (let ii = specials.length - 1; ii >= 0; --ii) {
+      let spec = specials[ii];
+      special_mul[spec.special] *= (spec.special_amount + 100)/100;
+    }
+    if (temperament) {
+      let mul = 1 + TEMPERAMENT_BONUS[temperament]/100;
+      special_mul.progress *= mul;
+      special_mul.quality *= mul;
+    }
+    const tool_type = skill_id[0] === 'l' ? 'laser' : skill_id[0] === 'd' ? 'drill' : 'acid';
+    let defadd = DEFENSE_REDUCTION[target.defense[tool_type]]/100 * (2 - special_mul.pierce);
+    special_mul.progress += defadd;
+    let skill = SKILLS[skill_id]!;
+    if (skill.durability && skill.durability < 0) {
+      special_mul.durability = 1;
+    }
+    return special_mul;
+  }
+  activateSkill(skill_index: number): boolean {
+    let { skills } = this.data;
+    let { cooldowns, temperament, specials } = this;
+    let skill_id = skills[skill_index];
+    assert(skill_id);
+
+    for (let ii = 0; ii < cooldowns.length; ++ii) {
+      if (cooldowns[ii]) {
+        --cooldowns[ii];
+      }
+    }
+    for (let ii = specials.length - 1; ii >= 0; --ii) {
+      let spec = specials[ii];
+      spec.special_duration--;
+      if (!spec.special_duration) {
+        specials.splice(ii, 1);
+      }
+    }
+
+    let special_mul = this.skillBonuses(skill_index);
+
     let skill = SKILLS[skill_id]!;
     if (skill.cooldown) {
       cooldowns[skill_index] = skill.cooldown;
     }
-    // todo: apply special
-    this.durability = clamp(this.durability - (skill.durability || 0), 0, 100);
+    this.durability = clamp(round(this.durability - (skill.durability || 0) * special_mul.durability), 0, 100);
 
     if (skill.success) {
       if (rand_craft.range(100) >= skill.success) {
@@ -410,24 +480,24 @@ class GameState {
       }
     }
 
-
     if (skill.quality) {
-      // todo: apply special
-      // todo: apply temperament
       let v = skill.quality[0] + rand_craft.range(skill.quality[1] - skill.quality[0] + 1);
-      this.quality += v;
+      v *= special_mul.quality;
+      this.quality += round(v);
     }
     if (skill.progress) {
-      // todo: apply special
-      // todo: apply temperament
-      // todo: apply defense
       let v = skill.progress[0] + rand_craft.range(skill.progress[1] - skill.progress[0] + 1);
-      this.progress = clamp(this.progress + v, 0, 100);
+      v *= special_mul.progress;
+      this.progress = clamp(round(this.progress + v), 0, 100);
     }
 
     let dtemp = rand_craft.range(4);
     if (temperament === 2) {
-      temperament--;
+      if (dtemp === 3) {
+        temperament--;
+      } else {
+        temperament -= 2;
+      }
     } else if (temperament === -1) {
       temperament++;
     } else if (dtemp === 0) {
@@ -435,19 +505,21 @@ class GameState {
     } else if (dtemp === 3) {
       temperament++;
     }
-    temperament = clamp(temperament, -1, 2);
+    temperament = clamp(temperament, -1, 2) as -1 | 0 | 1 | 2;
 
     if (skill.temperament) {
       temperament += skill.temperament;
-      temperament = clamp(temperament, -1, 2);
+      temperament = clamp(temperament, -1, 2) as -1 | 0 | 1 | 2;
     }
     this.temperament = temperament;
 
     if (skill.special) {
-      // TODO
-      // special?: 'progress' | 'quality' | 'durability' | 'pierce';
-      // special_amount?: number;
-      // special_duration?: number;
+      specials.push({
+        skill_idx: skill_index,
+        special: skill.special,
+        special_amount: skill.special_amount!,
+        special_duration: skill.special_duration!,
+      });
     }
     return true;
   }
@@ -797,7 +869,7 @@ function drawTools(): void {
     x = x0;
     let tool = tools[ii];
     if (!tool) {
-      if (!did_buy) {
+      if (!did_buy && tool_count < 10) {
         if (ii === 1 && !tools[2]) {
           font.draw({
             x, y, w,
@@ -888,9 +960,9 @@ function drawTools(): void {
       let can_afford = game_state.upgradeCanAfford(ii);
       if (button({
         x, y, w: BUTTON_H, h: BUTTON_H,
-        disabled: can_afford === null,
+        disabled: can_afford === null || tool_count >= 10,
         img: autoAtlas('game', 'upgrade'),
-        tooltip: 'Upgrade tool, unlocking a new skill, paying the cost listed on the right',
+        tooltip: 'Upgrade tool, unlocking a new skill, paying the cost listed to the right',
         disabled_focusable: true,
       })) {
         // playUISound('upgrade');
@@ -1038,6 +1110,11 @@ const font_styles_tooltip = {
   // fontStyleColored(null, palette_font[PAL_BLUE]),
 };
 const font_style_tooltip = fontStyleColored(null, palette_font[PAL_WHITE]);
+const font_style_cooldown = fontStyle(null, {
+  color: palette_font[PAL_WHITE + 2],
+  outline_color: palette_font[PAL_BLACK],
+  outline_width: 2.5,
+});
 function drawSkill(x: number, y: number, ii: number, as_button: boolean, tooltip_pos: UIBox): void {
   let font = uiGetFont();
   let { skills } = game_state.data;
@@ -1052,25 +1129,49 @@ function drawSkill(x: number, y: number, ii: number, as_button: boolean, tooltip
     return;
   }
   let tool_type = skill_id[0] === 'l' ? 'laser' : skill_id[0] === 'd' ? 'drill' : 'acid';
-  font.draw({
-    color: palette_font[PAL_BLACK],
-    x, y,
-    z: z + 2,
-    w: BUTTON_H, h: BUTTON_H,
-    align: ALIGN.HVCENTER,
-    text: skill_id.toUpperCase(),
-  });
+  // font.draw({
+  //   color: palette_font[PAL_BLACK],
+  //   x, y,
+  //   z: z + 2,
+  //   w: BUTTON_H, h: BUTTON_H,
+  //   align: ALIGN.HVCENTER,
+  //   text: skill_id.toUpperCase(),
+  // });
   let focused = false;
   if (as_button) {
-    let { cooldowns } = game_state;
+    let { cooldowns, specials } = game_state;
+    let special = specials.find((a) => a.skill_idx === ii);
+    if (special) {
+      font_tiny.draw({
+        color: palette_font[PAL_YELLOW],
+        size: 8,
+        x,
+        y: y - 7,
+        z,
+        w: BUTTON_H,
+        align: ALIGN.HCENTER,
+        text: `${special.special_duration}T`,
+      });
+    }
     let cooldown = cooldowns[ii] || 0;
     let disabled = cooldown > 0;
+    if (cooldown > 0) {
+      font.draw({
+        style: font_style_cooldown,
+        x: x + 1, y: y + 1,
+        z: z + 2,
+        w: BUTTON_H, h: BUTTON_H,
+        align: ALIGN.HVCENTER,
+        text: String(cooldown),
+      });
+    }
     if (button({
       x, y,
       w: BUTTON_H, h: BUTTON_H,
       img: autoAtlas('game', tool_type),
       disabled,
       hotkey: ii === 9 ? KEYS['0'] : KEYS['1'] + ii,
+      disabled_focusable: true,
     })) {
       game_state.activateSkill(ii);
     }
@@ -1099,7 +1200,7 @@ function drawSkill(x: number, y: number, ii: number, as_button: boolean, tooltip
     y += 1;
     font.draw({
       x, y, z, w,
-      text: `${skill_id.toUpperCase()}: ${skill.name}`,
+      text: `${tool_type[0].toUpperCase()}${tool_type.slice(1)} #${skill_id[1]}: ${skill.name}`,
       align: ALIGN.HCENTER,
     });
     y += yadv;
@@ -1129,19 +1230,42 @@ function drawSkill(x: number, y: number, ii: number, as_button: boolean, tooltip
         wrap();
       }
     }
+
+    let bonuses = as_button ? game_state.skillBonuses(ii) : {
+      progress: 1,
+      quality: 1,
+      durability: 1,
+    };
+
+    function bonus(key: keyof typeof bonuses): string {
+      let b = bonuses[key];
+      b = round(b * 100 - 100);
+      if (!b) {
+        return '';
+      }
+      return ` (${b < 0 ? '-' : '+'}${abs(b)}%)`;
+    }
+    function bump(v: number, key: keyof typeof bonuses): number {
+      v = round(v * bonuses[key]);
+      return v;
+    }
+    function bump2(v: number[], key: keyof typeof bonuses): string {
+      return `${bump(v[0], key)}-${bump(v[1], key)}`;
+    }
+
     if (skill.durability) {
       if (skill.durability > 0) {
-        addLine(`Durability: [c=red]-${skill.durability}[/c]`);
+        addLine(`Durability: [c=red]-${bump(skill.durability, 'durability')}[/c]${bonus('durability')}`);
       } else {
-        addLine(`Durability: [c=green]+${-skill.durability}[/c]`);
+        addLine(`Durability: [c=green]+${bump(-skill.durability, 'durability')}[/c]${bonus('durability')}`);
       }
     }
 
     if (skill.progress) {
-      addLine(`Progress: [c=green]+${skill.progress.join('-')}[/c]`);
+      addLine(`Progress: [c=green]+${bump2(skill.progress, 'progress')}[/c]${bonus('progress')}`);
     }
     if (skill.quality) {
-      addLine(`Quality: [c=cyan]+${skill.quality.join('-')}[/c]`);
+      addLine(`Quality: [c=cyan]+${bump2(skill.quality, 'quality')}[/c]${bonus('quality')}`);
     }
     if (skill.temperament) {
       if (skill.temperament < 0) {
@@ -1162,8 +1286,9 @@ function drawSkill(x: number, y: number, ii: number, as_button: boolean, tooltip
         addLine('[c=green]Ignore ore defense[/c]');
         addLine(`  ${turns}`);
       } else {
-        addLine(`Increase [c=green]${skill.special}[/c] effects of other skills`);
-        addLine(`  by [c=green]${skill.special_amount}%[/c] ${turns}`);
+        addLine(`${skill.special_amount! < 0 ? 'Decrease' : 'Increase'} ` +
+          `[c=green]${skill.special}[/c] effects of other skills`);
+        addLine(`  by [c=green]${abs(skill.special_amount!)}%[/c] ${turns}`);
       }
     }
 
@@ -1272,11 +1397,12 @@ function stateCraft(dt: number): void {
   if (done) {
     // done
     font.draw({
+      color: palette_font[durability > 0 ? PAL_GREEN : PAL_RED],
       x, y,
       w: floor(w/3),
       h: BUTTON_H,
       align: ALIGN.HVCENTER | ALIGN.HWRAP,
-      text: progress >= 100 ? 'Crafting\ncomplete!' : 'Crafting\nfailed',
+      text: durability > 0 ? 'Crafting\ncomplete!' : 'Crafting\nfailed',
     });
     if (buttonText({
       x: x + floor(w/3),
@@ -1331,7 +1457,7 @@ function stateCraft(dt: number): void {
     if (text === 'Quality') {
       let tier = floor(quality / 100);
       text = `Quality (T${tier+1})`;
-      const GOAL_X = floor(BAR_MAX_W * 0.9);
+      const GOAL_X = floor(BAR_MAX_W * 0.9) + tier * 3;
       // draw goal
       drawHBox({
         x: x + 2 + GOAL_X,
@@ -1372,13 +1498,17 @@ function stateCraft(dt: number): void {
         w: vw,
       }, autoAtlas('game', pair[3]));
     } else {
-      drawHBox({
-        x: x + 2,
-        y: y + 15,
-        z: z + 1,
-        h: 8,
-        w: vw,
-      }, autoAtlas('game', pair[3]));
+      if (text === 'Durability' && !v) {
+        // draw nothing
+      } else {
+        drawHBox({
+          x: x + 2,
+          y: y + 15,
+          z: z + 1,
+          h: 8,
+          w: vw,
+        }, autoAtlas('game', pair[3]));
+      }
     }
 
     font.draw({
