@@ -13,6 +13,23 @@ Acknowledgements:
 Start with: `npm start` (after running `npm i` once)
 
 
+# Abilities (need 15 in 3 tools) - add more temperament changes to this
+* L1 Basic: Prog 10, dur 5, no CD
+* D1 Basic: Prog 18, dur 10, no CD
+* A1 Polish: Qual 12, dur 5, CD 1
+* L2 Polish: Qual 34, dur 20, CD 1, temp -
+* D2 Polish: Qual 20, dur 10, CD 1
+* A2 Basic: Prog 24, dur 15, no CD, temp +
+* D3 Hasty: Prog 60, dur 10, 50%, CD 3
+* D4 Prepare: 100% extra Prog for next 4 steps, CD 14
+* D5 Precise Carve: 50% extra Qual for next 4 steps, CD 14
+* L3 Shear: Qual 20, dur 5, 60%, CD 3
+* L4 Venerate: Temp ++, CD 5
+* L5 Focus: 100% extra Qual for next 1 step
+* A3 Repair: dur +30, CD 5
+* A4 Reinforce: 50% less dur for next 4 steps, CD 14
+* A5 Soften: Ignore defenses for next 4 steps, CD 14
+
 # Ideas
 
 ## Gemsmith
