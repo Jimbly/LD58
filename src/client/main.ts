@@ -7,9 +7,11 @@ import assert from 'assert';
 import { autoAtlas } from 'glov/client/autoatlas';
 import { platformParameterGet } from 'glov/client/client_config';
 import * as engine from 'glov/client/engine';
-import { ALIGN, Font, fontCreate } from 'glov/client/font';
+import { ALIGN, Font, fontCreate, fontStyle, fontStyleColored } from 'glov/client/font';
 import { KEYS } from 'glov/client/input';
+import { markdownAuto } from 'glov/client/markdown';
 import { netInit } from 'glov/client/net';
+import { spot, SPOT_DEFAULT_LABEL } from 'glov/client/spot';
 import { spriteSetGet } from 'glov/client/sprite_sets';
 import { Sprite, spriteCreate } from 'glov/client/sprites';
 import {
@@ -22,13 +24,14 @@ import {
   scaleSizes,
   setFontHeight,
   setPanelPixelScale,
+  UIBox,
   uiGetFont,
   uiSetPanelColor,
   uiTextHeight,
 } from 'glov/client/ui';
 import { randCreate } from 'glov/common/rand_alea';
 import { TSMap } from 'glov/common/types';
-import { clamp } from 'glov/common/util';
+import { clamp, plural } from 'glov/common/util';
 import { palette, palette_font } from './palette';
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -39,6 +42,7 @@ const PAL_YELLOW = 11;
 const PAL_RED = 26;
 const PAL_BLACK = 25;
 const PAL_WHITE = 19;
+const PAL_CYAN = 18;
 
 
 window.Z = window.Z || {};
@@ -167,6 +171,7 @@ const SKILLS: TSMap<SkillDef> = {
     special: 'quality',
     special_amount: 100,
     special_duration: 1,
+    cooldown: 4,
   },
   a3: {
     name: 'Repair',
@@ -221,7 +226,6 @@ type GameData = {
   money: number;
   tools: (ToolEntry|null)[];
   requests: Request[];
-  personal_collected: boolean[];
   next_up: OreEntry[];
   skills: (string|null)[];
 };
@@ -289,13 +293,17 @@ class GameState {
           tier: 1 + rand_level.range(5),
         });
       }
+      tools[0].tier = 5;
+      tools.push({
+        tool: 'acid',
+        tier: 5,
+      });
     }
     this.data = {
       inventory,
       money,
       tools,
       requests,
-      personal_collected: [false, false, false],
       next_up,
       skills: [],
     };
@@ -369,11 +377,11 @@ class GameState {
     }
   }
   finishCrafting(): void {
-    let { progress, quality, crafting } = this;
+    let { durability, quality, crafting } = this;
     let { inventory, next_up } = this.data;
 
     let target = next_up[crafting];
-    if (progress >= 100) {
+    if (durability > 0) {
       let tier = floor(quality / 100) + 1;
       inventory.push({
         gem: target.gem,
@@ -525,6 +533,7 @@ function init(): void {
 }
 
 let inv_highlight: number | null = null;
+let PERSONAL_Y = 0;
 
 function drawCollector(): void {
   let font = uiGetFont();
@@ -535,7 +544,7 @@ function drawCollector(): void {
   font.draw({
     x, y, w,
     align: ALIGN.HCENTER,
-    text: 'Sell T1',
+    text: 'Sell',
   });
   y += text_height + 3;
 
@@ -623,10 +632,73 @@ function drawCollector(): void {
     }
   }
 
+  PERSONAL_Y = y + 2;
 }
 
 function drawPersonalCollection(): void {
-  // TODO
+  let font = uiGetFont();
+  let text_height = uiTextHeight();
+  let x = COLLECTOR_X;
+  let y = PERSONAL_Y;
+  let w = COLLECTOR_W;
+  font.draw({
+    x, y, w,
+    align: ALIGN.HCENTER,
+    text: 'Personal',
+  });
+  y += text_height - 4;
+  font.draw({
+    x: COLLECTOR_X, y, w,
+    align: ALIGN.HCENTER,
+    text: 'Collection',
+  });
+  y += text_height + 3;
+
+  x = COLLECTOR_X + floor((COLLECTOR_W - FRAME_H * 3 - 2*2)/2);
+  let did_win = true;
+  for (let ii = 0; ii < GEM_TYPES.length; ++ii) {
+    let have_it = game_state.satisfiesRequest({
+      gem: GEM_TYPES[ii],
+      tier: 5,
+      value: 0,
+      done: false,
+    }) !== null;
+    drawBox({
+      x, y, z: Z.UI - 1,
+      w: FRAME_H,
+      h: FRAME_H + IMG_H + 2,
+    }, autoAtlas('game', have_it ? 'item-border' : 'item-empty'), 1);
+
+    autoAtlas('game', GEM_TYPES[ii]).draw({
+      x: x + (FRAME_H - IMG_H)/2,
+      y: y + (FRAME_H - IMG_H)/2,
+      w: IMG_H,
+      h: IMG_H,
+    });
+    autoAtlas('game', 'tier5').draw({
+      x: x,
+      y: y,
+      z: Z.UI + 1,
+      w: FRAME_H,
+      h: FRAME_H,
+    });
+
+    if (!have_it) {
+      did_win = false;
+    }
+    autoAtlas('game', have_it ? 'check' : 'x').draw({
+      x: x + (FRAME_H - IMG_H)/2,
+      y: y + (FRAME_H - IMG_H)/2 + IMG_H + 2,
+      z: Z.UI + 1,
+      w: IMG_H,
+      h: IMG_H,
+    });
+
+    x += FRAME_H + 2;
+  }
+  if (did_win) {
+    // TODO: trigger victory!
+  }
 }
 
 
@@ -932,6 +1004,12 @@ const MAIN_PANEL = {
   w: 222,
   h: 138,
 };
+const CRAFT_TOOLTIP_PANEL = {
+  x: (game_width - 244)/2,
+  w: 244,
+  y: MAIN_PANEL.y + MAIN_PANEL.h + 2,
+  h: 54,
+};
 const SKILL_PAD = 1;
 const QUICKBAR_W = BUTTON_H * 10 + SKILL_PAD * 9;
 const TEMP = [
@@ -940,7 +1018,27 @@ const TEMP = [
   [PAL_GREEN, 'BENIGN'],
   [PAL_YELLOW, 'EXALTED'],
 ] as const;
-function drawSkill(x: number, y: number, ii: number, as_button: boolean): void {
+const FONT_OUTLINE = {
+  outline_color: palette_font[PAL_BLACK],
+  outline_width: 2.5,
+};
+const font_styles_tooltip = {
+  red: fontStyle(null, {
+    color: palette_font[PAL_RED],
+    ...FONT_OUTLINE,
+  }),
+  green: fontStyle(null, {
+    color: palette_font[PAL_GREEN],
+    ...FONT_OUTLINE,
+  }),
+  cyan: fontStyle(null, {
+    color: palette_font[PAL_CYAN],
+    ...FONT_OUTLINE,
+  }),
+  // fontStyleColored(null, palette_font[PAL_BLUE]),
+};
+const font_style_tooltip = fontStyleColored(null, palette_font[PAL_WHITE]);
+function drawSkill(x: number, y: number, ii: number, as_button: boolean, tooltip_pos: UIBox): void {
   let font = uiGetFont();
   let { skills } = game_state.data;
   let z = Z.UI;
@@ -953,6 +1051,7 @@ function drawSkill(x: number, y: number, ii: number, as_button: boolean): void {
     }, autoAtlas('game', 'item-empty'), 1);
     return;
   }
+  let tool_type = skill_id[0] === 'l' ? 'laser' : skill_id[0] === 'd' ? 'drill' : 'acid';
   font.draw({
     color: palette_font[PAL_BLACK],
     x, y,
@@ -961,6 +1060,7 @@ function drawSkill(x: number, y: number, ii: number, as_button: boolean): void {
     align: ALIGN.HVCENTER,
     text: skill_id.toUpperCase(),
   });
+  let focused = false;
   if (as_button) {
     let { cooldowns } = game_state;
     let cooldown = cooldowns[ii] || 0;
@@ -968,19 +1068,116 @@ function drawSkill(x: number, y: number, ii: number, as_button: boolean): void {
     if (button({
       x, y,
       w: BUTTON_H, h: BUTTON_H,
-      img: autoAtlas('game', skill_id[0] === 'l' ? 'laser' : skill_id[0] === 'd' ? 'drill' : 'acid'),
+      img: autoAtlas('game', tool_type),
       disabled,
       hotkey: ii === 9 ? KEYS['0'] : KEYS['1'] + ii,
     })) {
       game_state.activateSkill(ii);
     }
+    focused = buttonWasFocused();
   } else {
-    // TODO
     button({
       x, y,
       w: BUTTON_H, h: BUTTON_H,
-      img: autoAtlas('game', skill_id[0] === 'l' ? 'laser' : skill_id[0] === 'd' ? 'drill' : 'acid'),
+      img: autoAtlas('game', tool_type),
       draw_only: true,
+    });
+    focused = spot({
+      def: SPOT_DEFAULT_LABEL,
+      x, y, w: BUTTON_H, h: BUTTON_H,
+    }).focused;
+  }
+  if (focused) {
+    const yadv = 12;
+    x = tooltip_pos.x;
+    y = tooltip_pos.y;
+    let w = tooltip_pos.w;
+    z = tooltip_pos.z || Z.TOOLTIP;
+    let skill = SKILLS[skill_id]!;
+    x += 3;
+    w -= 6;
+    y += 1;
+    font.draw({
+      x, y, z, w,
+      text: `${skill_id.toUpperCase()}: ${skill.name}`,
+      align: ALIGN.HCENTER,
+    });
+    y += yadv;
+
+    let count = 0;
+    let wrapped = false;
+    let y_start = y;
+    function wrap(): void {
+      if (wrapped) {
+        return;
+      }
+      wrapped = true;
+      y = y_start;
+      x += floor(w/2);
+    }
+
+    function addLine(text: string): void {
+      markdownAuto({
+        font_style: font_style_tooltip,
+        font_styles: font_styles_tooltip,
+        x, y, z,
+        text,
+      });
+      y += yadv;
+      ++count;
+      if (count === 3) {
+        wrap();
+      }
+    }
+    if (skill.durability) {
+      if (skill.durability > 0) {
+        addLine(`Durability: [c=red]-${skill.durability}[/c]`);
+      } else {
+        addLine(`Durability: [c=green]+${-skill.durability}[/c]`);
+      }
+    }
+
+    if (skill.progress) {
+      addLine(`Progress: [c=green]+${skill.progress.join('-')}[/c]`);
+    }
+    if (skill.quality) {
+      addLine(`Quality: [c=cyan]+${skill.quality.join('-')}[/c]`);
+    }
+    if (skill.temperament) {
+      if (skill.temperament < 0) {
+        addLine('Temperament: [c=red]--[/c]');
+      } else if (skill.temperament === 1) {
+        addLine('Temperament: [c=green]++[/c]');
+      } else {
+        addLine('Temperament: [c=green]++++[/c]');
+      }
+    }
+    if (skill.success) {
+      addLine(`Success Rate: [c=red]${skill.success}%[/c]`);
+    }
+
+    if (skill.special) {
+      let turns = `for the next [c=green]${skill.special_duration} ${plural(skill.special_duration!, 'Turn')}[/c]`;
+      if (skill.special === 'pierce') {
+        addLine('[c=green]Ignore ore defense[/c]');
+        addLine(`  ${turns}`);
+      } else {
+        addLine(`Increase [c=green]${skill.special}[/c] effects of other skills`);
+        addLine(`  by [c=green]${skill.special_amount}%[/c] ${turns}`);
+      }
+    }
+
+    if (skill.cooldown) {
+      if (!skill.special) {
+        wrap();
+      }
+      addLine(`Cooldown: [c=red]${skill.cooldown} ${plural(skill.cooldown, 'Turn')}[/c]`);
+    }
+
+    panel({
+      ...tooltip_pos,
+      z: z - 1,
+      sprite: autoAtlas('game', `panel_${tool_type}`),
     });
   }
 }
@@ -1016,7 +1213,7 @@ function stateCraft(dt: number): void {
       w: 52,
       h: 62,
     });
-    if (progress >= 100) {
+    if (durability > 0) {
       let xx = x + (w - FRAME_H*2)/2;
       let yy = y + 10;
       drawBox({
@@ -1098,7 +1295,7 @@ function stateCraft(dt: number): void {
     let { skills } = game_state.data;
     for (let ii = 0; ii < 10; ++ii) {
       let skill_id = skills[ii] || null;
-      drawSkill(x, y, ii, true);
+      drawSkill(x, y, ii, true, CRAFT_TOOLTIP_PANEL);
       if (skill_id) {
         font_tiny.draw({
           x, y: y + BUTTON_H + 1,
@@ -1260,18 +1457,21 @@ function drawSkillsInPrep(): void {
   let w = SKILLS_W;
   font.draw({
     x, y, w,
-    // align: ALIGN.HCENTER,
     text: 'Skills',
   });
   y += text_height + 2;
 
-  // let { skills } = game_state.data;
   for (let ii = 0; ii < 10; ++ii) {
     if (ii === 5) {
       x = SKILLS_X;
       y += BUTTON_H + 1;
     }
-    drawSkill(x, y, ii, false);
+    drawSkill(x, y, ii, false, {
+      x: CRAFT_TOOLTIP_PANEL.x,
+      w: CRAFT_TOOLTIP_PANEL.w,
+      y: y - CRAFT_TOOLTIP_PANEL.h - 2,
+      h: CRAFT_TOOLTIP_PANEL.h,
+    });
     x += BUTTON_H + 1;
   }
 }
@@ -1341,6 +1541,6 @@ export function main(): void {
 
   engine.setState(statePrep);
   if (engine.DEBUG) {
-    // stateCraftInit(0);
+    stateCraftInit(0);
   }
 }
