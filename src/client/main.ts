@@ -247,7 +247,7 @@ type GameData = {
   tools: (ToolEntry|null)[];
   requests: Request[];
   next_up: OreEntry[];
-  skills: (string|null)[];
+  skills: string[];
   max_tier: number; // 2-4 only
   won: boolean;
   endless: boolean;
@@ -337,10 +337,10 @@ class GameState {
           tier: 1 + rand_level.range(5),
         });
       }
-      tools[0].tier = 2;
+      tools[0].tier = 5;
       tools.push({
         tool: 'drill',
-        tier: 3,
+        tier: 4,
       }, {
         tool: 'acid',
         tier: 5,
@@ -395,8 +395,12 @@ class GameState {
     rand_level.importState(data.seed);
   }
 
-  applySkills(): void {
-    let { tools, skills } = this.data;
+  toolTiers(): {
+    laser: number;
+    drill: number;
+    acid: number;
+  } {
+    let { tools } = this.data;
     let tool_tiers = {
       laser: 0,
       drill: 0,
@@ -408,49 +412,37 @@ class GameState {
         tool_tiers[tool.tool] += tool.tier;
       }
     }
+    return tool_tiers;
+  }
 
+  applySkills(): void {
+    let { skills } = this.data;
+    let tool_tiers = this.toolTiers();
+
+    let seen: TSMap<true> = {};
+    for (let ii = 0; ii < skills.length; ++ii) {
+      seen[skills[ii]] = true;
+    }
     let tooltype: keyof typeof tool_tiers;
-    if (0) {
-      let seen: TSMap<true> = {};
-      let need: string[] = [];
-      for (tooltype in tool_tiers) {
-        let count = tool_tiers[tooltype];
-        for (let ii = 1; ii <= count; ++ii) {
-          let key = `${tooltype[0].toLowerCase()}${ii}`;
-          if (SKILLS[key]) {
-            if (skills.includes(key)) {
-              seen[key] = true;
-            } else {
-              need.push(key);
-            }
-          }
-        }
-      }
-      need.reverse();
-      for (let ii = 0; ii < skills.length; ++ii) {
-        if (skills[ii] && !seen[skills[ii]!]) {
-          skills[ii] = null;
-        }
-        if (!skills[ii] && need.length) {
-          skills[ii] = need.pop()!;
-        }
-      }
-      while (need.length) {
-        skills.push(need.pop()!);
-      }
-    } else {
-      // simple, sorted replace
-      skills.length = 0;
-      for (tooltype in tool_tiers) {
-        let count = tool_tiers[tooltype];
-        for (let ii = 1; ii <= count; ++ii) {
-          let key = `${tooltype[0].toLowerCase()}${ii}`;
-          if (SKILLS[key]) {
-            skills.push(key);
-          }
+    // Add any missing up to 10
+    for (tooltype in tool_tiers) {
+      let count = tool_tiers[tooltype];
+      for (let ii = 1; ii <= count; ++ii) {
+        let key = `${tooltype[0].toLowerCase()}${ii}`;
+        if (SKILLS[key] && !seen[key] && skills.length < 10) {
+          skills.push(key);
         }
       }
     }
+    // donotcheckin: if allowing trash, need to prune skills too!
+    skills.sort(function (a, b) {
+      let at = ['l', 'd', 'a'].indexOf(a[0]);
+      let bt = ['l', 'd', 'a'].indexOf(b[0]);
+      if (at !== bt) {
+        return at - bt;
+      }
+      return a < b ? -1 : 1;
+    });
   }
 
   crafting = -1;
@@ -481,6 +473,7 @@ class GameState {
       this.cooldowns.push(0);
     }
     this.specials = [];
+    this.applySkills();
   }
   finishCrafting(): void {
     let { durability, quality, progress, crafting } = this;
@@ -700,15 +693,7 @@ class GameState {
   }
 
   toolTier(tool_type: ToolType): number {
-    let { tools } = this.data;
-    let ret = 0;
-    for (let ii = 0; ii < tools.length; ++ii) {
-      let tool = tools[ii];
-      if (tool && tool.tool === tool_type) {
-        ret += tool.tier;
-      }
-    }
-    return ret;
+    return this.toolTiers()[tool_type];
   }
 
   upgradeCost(tool: ToolType, cur_tier: number): {
@@ -1358,10 +1343,10 @@ const font_style_cooldown = fontStyle(null, {
   outline_color: palette_font[PAL_BLACK],
   outline_width: 2.5,
 });
+type SkillStyle = 'button' | 'disabled' | 'selectable';
 function drawSkill(
   x: number, y: number,
-  skill_id: string | null, ii: number, as_button: boolean, tooltip_pos: UIBox,
-  unavailable: boolean,
+  skill_id: string | null, ii: number, skill_style: SkillStyle, tooltip_pos: UIBox
 ): void {
   let font = uiGetFont();
   let z = Z.UI;
@@ -1384,7 +1369,7 @@ function drawSkill(
   // });
   let icon = autoAtlas('game', tool_type);
   let focused = false;
-  if (as_button) {
+  if (skill_style === 'button') {
     let { cooldowns, specials } = game_state;
     let special = specials.find((a) => a.skill_idx === ii);
     if (special) {
@@ -1423,7 +1408,7 @@ function drawSkill(
     }
     focused = buttonWasFocused();
   } else {
-    if (unavailable) {
+    if (skill_style === 'disabled') {
       drawBox({
         x, y,
         w: BUTTON_H, h: BUTTON_H,
@@ -1436,18 +1421,46 @@ function drawSkill(
         h: IMG_H,
         color: [1, 1, 1, 0.5],
       });
+      focused = spot({
+        def: SPOT_DEFAULT_LABEL,
+        x, y, w: BUTTON_H, h: BUTTON_H,
+      }).focused;
+    } else if (skill_style === 'selectable') {
+      let { skills } = game_state.data;
+      let selected = skills.includes(skill_id);
+      if (!selected && skills.length >= 10) {
+        // cannot select, at max
+        button({
+          x, y,
+          w: BUTTON_H, h: BUTTON_H,
+          img: icon,
+          draw_only: true,
+          base_name: 'button_unselected',
+        });
+        focused = spot({
+          def: SPOT_DEFAULT_LABEL,
+          x, y, w: BUTTON_H, h: BUTTON_H,
+        }).focused;
+      } else {
+        // select/deselect
+        if (button({
+          x, y,
+          w: BUTTON_H, h: BUTTON_H,
+          img: icon,
+          base_name: selected ? undefined : 'button_unselected',
+        })) {
+          if (selected) {
+            skills.splice(skills.indexOf(skill_id), 1);
+          } else {
+            skills.push(skill_id);
+          }
+          // NO, would re-add: game_state.applySkills();
+        }
+        focused = buttonWasFocused();
+      }
     } else {
-      button({
-        x, y,
-        w: BUTTON_H, h: BUTTON_H,
-        img: icon,
-        draw_only: true,
-      });
+      assert(false);
     }
-    focused = spot({
-      def: SPOT_DEFAULT_LABEL,
-      x, y, w: BUTTON_H, h: BUTTON_H,
-    }).focused;
   }
   if (focused) {
     const yadv = 12;
@@ -1493,7 +1506,7 @@ function drawSkill(
       }
     }
 
-    let bonuses = as_button ? game_state.skillBonuses(ii) : {
+    let bonuses = skill_style === 'button' ? game_state.skillBonuses(ii) : {
       progress: 1,
       quality: 1,
       durability: 1,
@@ -1699,7 +1712,7 @@ function stateCraft(dt: number): void {
     let { skills } = game_state.data;
     for (let ii = 0; ii < 10; ++ii) {
       let skill_id = skills[ii] || null;
-      drawSkill(x, y, skill_id, ii, true, CRAFT_TOOLTIP_PANEL, false);
+      drawSkill(x, y, skill_id, ii, 'button', CRAFT_TOOLTIP_PANEL);
       if (skill_id) {
         font_tiny.draw({
           x, y: y + BUTTON_H + 1,
@@ -1891,13 +1904,35 @@ function drawSkillsInPrep(): void {
     x, y, w,
     text: 'Skills',
   });
+
+  let skills_unlocked: TSMap<true> = {};
+  let tool_tiers = game_state.toolTiers();
+  let tooltype: keyof typeof tool_tiers;
+  for (tooltype in tool_tiers) {
+    let count = tool_tiers[tooltype];
+    for (let ii = 1; ii <= count; ++ii) {
+      let key = `${tooltype[0].toLowerCase()}${ii}`;
+      if (SKILLS[key]) {
+        skills_unlocked[key] = true;
+      }
+    }
+  }
+  let { skills } = game_state.data;
+  let max_skills = min(10, Object.keys(skills_unlocked).length);
+  font.draw({
+    color: skills.length === 10 ? palette_font[PAL_RED] :
+      skills.length === max_skills ? palette_font[PAL_WHITE] : palette_font[PAL_YELLOW],
+    x, y, w,
+    align: ALIGN.HRIGHT,
+    text: `${skills.length} / ${max_skills}`,
+  });
+
   y += text_height + 2;
 
   let skill_ids = [
     'l1', 'l2', 'l3', 'l4', 'l5', 'a1', 'a2', 'a3',
     'd1', 'd2', 'd3', 'd4', 'd5', 'a4', 'a5'
   ];
-  let { skills } = game_state.data;
   for (let ii = 0; ii < skill_ids.length; ++ii) {
     let skill_id = skill_ids[ii];
     if (skill_id === 'd1') {
@@ -1911,12 +1946,12 @@ function drawSkillsInPrep(): void {
       y -= 2;
       x += BUTTON_H/2;
     }
-    drawSkill(x, y, skill_id, -1, false, {
+    drawSkill(x, y, skill_id, -1, skills_unlocked[skill_id] ? 'selectable' : 'disabled', {
       x: CRAFT_TOOLTIP_PANEL.x,
       w: CRAFT_TOOLTIP_PANEL.w,
-      y: y - CRAFT_TOOLTIP_PANEL.h - 1,
+      y: SKILLS_Y - CRAFT_TOOLTIP_PANEL.h + 2,
       h: CRAFT_TOOLTIP_PANEL.h,
-    }, !skills.includes(skill_id));
+    });
     x += BUTTON_H + 1;
   }
 }
@@ -2257,6 +2292,12 @@ export function main(): void {
       button_blue: { atlas: 'game' },
       button_blue_rollover: { atlas: 'game' },
       button_blue_down: { atlas: 'game' },
+      button_selected: { atlas: 'game' },
+      button_selected_rollover: { atlas: 'game' },
+      button_selected_down: { atlas: 'game' },
+      button_unselected: { atlas: 'game' },
+      button_unselected_rollover: { atlas: 'game' },
+      button_unselected_down: { atlas: 'game' },
     },
     pixel_perfect,
     show_fps: false,
