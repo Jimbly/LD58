@@ -15,7 +15,6 @@ Acknowledgements:
 Start with: `npm start` (after running `npm i` once)
 
 # TODO
-* Victory screen
 * Unique icons per skill
 
 # Abilities draft (need 15 in 3 tools) - add more temperament changes to this

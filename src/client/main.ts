@@ -31,6 +31,7 @@ import {
   drawBox,
   drawHBox,
   label,
+  menuUp,
   panel,
   scaleSizes,
   setFontHeight,
@@ -49,6 +50,7 @@ import { palette, palette_font } from './palette';
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const { abs, max, min, ceil, round, floor } = Math;
 
+const PAL_BLUE = 17;
 const PAL_GREEN = 12;
 const PAL_YELLOW = 11;
 const PAL_RED = 26;
@@ -331,7 +333,7 @@ class GameState {
       for (let ii = 0; ii < 6; ++ii) {
         inventory.push({
           gem: GEM_TYPES[rand_level.range(GEM_TYPES.length)],
-          tier: 5, // 1 + rand_level.range(5),
+          tier: 1 + rand_level.range(5),
         });
       }
       tools[0].tier = 2;
@@ -1293,6 +1295,10 @@ const font_styles_tooltip: TSMap<FontStyle> = {
     color: palette_font[PAL_GREEN],
     ...FONT_OUTLINE,
   }),
+  blue: fontStyle(null, {
+    color: palette_font[PAL_BLUE],
+    ...FONT_OUTLINE,
+  }),
   white: fontStyle(null, {
     color: palette_font[PAL_WHITE],
     ...FONT_OUTLINE,
@@ -1301,7 +1307,6 @@ const font_styles_tooltip: TSMap<FontStyle> = {
     color: palette_font[PAL_CYAN],
     ...FONT_OUTLINE,
   }),
-  // fontStyleColored(null, palette_font[PAL_BLUE]),
 };
 const font_style_tooltip = fontStyleColored(null, palette_font[PAL_WHITE]);
 const font_style_cooldown = fontStyle(null, {
@@ -1818,10 +1823,74 @@ function drawSkillsInPrep(): void {
   }
 }
 
+function drawVictory(): void {
+  if (!game_state.data.won) {
+    return;
+  }
+
+  let z = Z.MODAL + 1;
+
+  const PAD = 20;
+
+  let x = PAD;
+  let y = PAD;
+  let w = game_width - PAD * 2;
+  let font = uiGetFont();
+  let text_height = uiTextHeight();
+
+  y += 20;
+
+  font.draw({
+    style: font_styles_tooltip.white,
+    x,y,z,w,
+    size: text_height * 2,
+    align: ALIGN.HCENTER,
+    text: 'You Win!',
+  });
+
+  y += text_height * 2 + 20;
+
+  y += markdownAuto({
+    font_style: font_style_tooltip,
+    x,y,z,w,
+    text_height,
+    align: ALIGN.HCENTER|ALIGN.HWRAP,
+    text: 'You successfully collected a perfect [c=red]Ruby[/c], [c=blue]Sapphire[/c], and [c=green]Emerald[/c],' +
+      ' achieving your life-long goal.  Congrats!\n\n' +
+      'Thanks for playing!',
+  }).h;
+
+  y += 20;
+
+  let button_w = BUTTON_H * 10;
+  if (buttonText({
+    x: (game_width - button_w) / 2,
+    y,
+    z,
+    w: button_w,
+    text: 'View High Scores',
+  })) {
+    // eslint-disable-next-line @typescript-eslint/no-use-before-define
+    engine.setState(stateScores);
+  }
+
+  panel({
+    x,
+    y: PAD,
+    z,
+    w,
+    h: game_height - PAD * 2,
+    sprite: autoAtlas('game', 'panel_blue'),
+  });
+
+  menuUp();
+}
+
 function statePrep(dt: number): void {
   let black = palette[PAL_BLACK];
   gl.clearColor(black[0], black[1], black[2], 1);
   inv_highlight = null;
+  drawVictory();
   drawCollector();
   drawPersonalCollection();
   drawTools(); // before inventory
@@ -1985,8 +2054,8 @@ function stateScores(dt: number): void {
   if (buttonText({
     x: 1,
     y: 1,
-    w: CHW * 6,
-    text: 'BACK',
+    w: CHW * 4,
+    text: 'Back',
     hotkey: KEYS.ESC,
   })) {
     queueTransition();
