@@ -17,7 +17,6 @@ Start with: `npm start` (after running `npm i` once)
 # TODO
 * Nothing
 # Stretch
-* Sound effects - ascending scaled for each of prog/qual?
 * Music
 * Animate quality tier transitions
 # Publish

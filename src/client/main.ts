@@ -46,7 +46,7 @@ import {
 } from 'glov/client/ui';
 import { randCreate, shuffleArray } from 'glov/common/rand_alea';
 import { TSMap } from 'glov/common/types';
-import { capitalize as capitalizeOrig, clamp, easeOut, lerp, plural } from 'glov/common/util';
+import { capitalize as capitalizeOrig, clamp, easeIn, easeOut, lerp, plural } from 'glov/common/util';
 import { v3copy } from 'glov/common/vmath';
 import { palette, palette_font } from './palette';
 
@@ -2159,6 +2159,68 @@ function statePrep(dt: number): void {
   }
 }
 
+let next_gem_countdown = 0;
+type BlinkyGem = {
+  x: number;
+  y: number;
+  gem: GemType;
+  age: number;
+  speed: number;
+};
+let blinky_gems: BlinkyGem[] = [];
+let first_init = true;
+function blinkyGems(dt: number): void {
+  const AGE = 30000;
+  const SPAWN_RATE = 4000;
+  const FADE_IN = 1000/AGE;
+  if (first_init) {
+    first_init = false;
+    let count = AGE/SPAWN_RATE;
+    for (let ii = 0; ii < count; ++ii) {
+      blinky_gems.push({
+        x: Math.random() * game_width,
+        y: Math.random() * game_height/2,
+        gem: GEM_TYPES[floor(Math.random() * 3)],
+        age: ii/count,
+        speed: Math.random(),
+      });
+    }
+  }
+  if (dt >= next_gem_countdown) {
+    next_gem_countdown = SPAWN_RATE * (0.9 + 0.2 * Math.random());
+    blinky_gems.push({
+      x: Math.random() * game_width,
+      y: Math.random() * game_height/2,
+      gem: GEM_TYPES[floor(Math.random() * 3)],
+      age: 0,
+      speed: Math.random(),
+    });
+  } else {
+    next_gem_countdown -= dt;
+  }
+
+  let z = 1;
+  for (let ii = blinky_gems.length - 1; ii >= 0; --ii) {
+    let entry = blinky_gems[ii];
+    entry.age += dt / AGE;
+    if (entry.age >= 1) {
+      blinky_gems.splice(ii, 1);
+      continue;
+    }
+    let age = entry.age;
+    let v = age < FADE_IN ? easeIn(age /FADE_IN, 2) : age > (1 - FADE_IN) ? easeIn((1 - age)/FADE_IN, 2) : 1;
+    autoAtlas('game', entry.gem).withOrigin([0.5, 0.5]).draw({
+      x: entry.x,
+      y: entry.y + age * 600 * (1 + entry.speed),
+      z,
+      w: IMG_H * 3,
+      h: IMG_H * 3,
+      color: [1, 1, 1, v],
+    });
+    z+=0.01;
+  }
+}
+
 let title_anim: AnimationSequencer | null = null;
 let title_alpha = {
   title: 0,
@@ -2223,6 +2285,8 @@ function stateTitle(dt: number): void {
     w: W, align: ALIGN.HCENTER,
     text: 'By Jimb Esser for Ludum Dare 58',
   });
+
+  blinkyGems(dt);
 
   const PROMPT_PAD = 8;
   if (title_alpha.button) {
@@ -2480,6 +2544,6 @@ export function main(): void {
   if (engine.DEBUG) {
     // stateCraftInit(2);
     // engine.setState(stateScores);
-    engine.setState(statePrep);
+    //engine.setState(statePrep);
   }
 }
