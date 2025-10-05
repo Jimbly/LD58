@@ -58,6 +58,8 @@ const PAL_BLACK = 25;
 const PAL_WHITE = 19;
 const PAL_CYAN = 18;
 
+const INV_COLS = 6;
+const INV_ROWS = 2;
 
 window.Z = window.Z || {};
 Z.BACKGROUND = 1;
@@ -106,6 +108,7 @@ type SkillDef = {
   success?: number;
 };
 const CDRARE = 14;
+const CDRARE2 = 29;
 const SKILLS: TSMap<SkillDef> = {
   l1: {
     name: 'Radiant Blast',
@@ -160,7 +163,7 @@ const SKILLS: TSMap<SkillDef> = {
     special: 'progress',
     special_amount: 100,
     special_duration: 3,
-    cooldown: CDRARE,
+    cooldown: CDRARE2,
     temperament: 1,
   },
   d5: {
@@ -205,7 +208,7 @@ const SKILLS: TSMap<SkillDef> = {
     special: 'pierce',
     special_amount: 100,
     special_duration: 11,
-    cooldown: CDRARE,
+    cooldown: CDRARE2,
   },
   a5: {
     name: 'Precision',
@@ -330,21 +333,21 @@ class GameState {
     shuffleArray(next_up, rand_level);
 
     if (engine.DEBUG && false) {
-      money = 9999;
-      for (let ii = 0; ii < 6; ++ii) {
+      money = 1000000;
+      for (let ii = 0; ii < 12; ++ii) {
         inventory.push({
-          gem: GEM_TYPES[rand_level.range(GEM_TYPES.length)],
-          tier: 1 + rand_level.range(5),
+          gem: GEM_TYPES[ii % GEM_TYPES.length], // rand_level.range(GEM_TYPES.length)],
+          tier: 4, //1 + rand_level.range(5),
         });
       }
-      tools[0].tier = 5;
-      tools.push({
-        tool: 'drill',
-        tier: 4,
-      }, {
-        tool: 'acid',
-        tier: 5,
-      });
+      tools[0].tier = 1;
+      // tools.push({
+      //   tool: 'drill',
+      //   tier: 3,
+      // }, {
+      //   tool: 'acid',
+      //   tier: 5,
+      // });
     }
     this.data = {
       inventory,
@@ -434,7 +437,6 @@ class GameState {
         }
       }
     }
-    // donotcheckin: if allowing trash, need to prune skills too!
     skills.sort(function (a, b) {
       let at = ['l', 'd', 'a'].indexOf(a[0]);
       let bt = ['l', 'd', 'a'].indexOf(b[0]);
@@ -737,10 +739,6 @@ class GameState {
     tool.tier++;
     this.applySkills();
   }
-  trashTool(tool_index: number): void {
-    this.data.tools.splice(tool_index, 1);
-    this.applySkills();
-  }
   buyTool(tool_index: number, tool_type: ToolType): void {
     this.data.money -= NEW_TOOL_COST;
     this.data.tools[tool_index] = {
@@ -788,7 +786,10 @@ function drawCollector(): void {
   let x = COLLECTOR_X;
   let y = COLLECTOR_Y;
   let w = COLLECTOR_W;
+  let { requests, inventory } = game_state.data;
+  let ore_disabled = inventory.length === INV_COLS * INV_ROWS && !inventory.includes(null);
   font.draw({
+    color: ore_disabled ? palette_font[PAL_RED] : palette_font[PAL_WHITE],
     x, y, w,
     align: ALIGN.HCENTER,
     text: 'Sell',
@@ -800,7 +801,6 @@ function drawCollector(): void {
   });
   y += text_height + 2;
 
-  let { requests, inventory } = game_state.data;
   for (let ii = 0; ii < requests.length; ++ii) {
     let entry = requests[ii];
     x = COLLECTOR_X;
@@ -980,8 +980,6 @@ function drawPersonalCollection(): void {
 }
 
 
-const INV_COLS = 6;
-const INV_ROWS = 2;
 const INV_W = INV_COLS * FRAME_H + (INV_COLS - 1) * 2;
 const INV_X = floor((game_width - INV_W)/2);
 const INV_Y = NEXTUP_Y;
@@ -992,7 +990,9 @@ function drawInventory(): void {
   let y = INV_Y;
   let w = INV_W;
   let { money, inventory } = game_state.data;
+  let ore_disabled = inventory.length === INV_COLS * INV_ROWS && !inventory.includes(null);
   font.draw({
+    color: ore_disabled ? palette_font[PAL_RED] : palette_font[PAL_WHITE],
     x, y, w,
     text: 'Inventory',
   });
@@ -1036,12 +1036,12 @@ function drawInventory(): void {
   }
 }
 
-const TOOLS_ROWS = 5;
 const TOOLS_PAD1 = 4;
 const TOOLS_PRICE_W = 36;
-const TOOLS_W = FRAME_H + TOOLS_PAD1 + BUTTON_H + 2 + FRAME_H + 1 + TOOLS_PRICE_W + TOOLS_PAD1 + BUTTON_H;
+const BUY_W = BUTTON_H + IMG_H;
+const TOOLS_W = BUY_W + TOOLS_PAD1 + BUTTON_H + 2 + FRAME_H + 1 + TOOLS_PRICE_W;
 const TOOLS_X = floor((game_width - TOOLS_W)/2);
-const TOOLS_Y = 64;
+const TOOLS_Y = 68;
 function drawTools(): void {
   let font = uiGetFont();
   let text_height = uiTextHeight();
@@ -1055,81 +1055,44 @@ function drawTools(): void {
     tooltip: 'Tools unlock skills to assist in extracting gems of higher quality,' +
       ' up to 5 skills of each tool class, and 10 skills total.'
   });
-  let tool_count = 0;
-  for (let ii = 0; ii < tools.length; ++ii) {
-    let tool = tools[ii];
-    if (tool) {
-      tool_count += tool.tier;
-    }
-  }
-  let disabled = tool_count === 10;
-  font.draw({
-    color: palette_font[disabled ? PAL_RED : PAL_WHITE],
-    x, y, w,
-    align: ALIGN.HRIGHT,
-    text: `${tool_count} / 10`,
-  });
   y += text_height + 1;
 
   let x0 = x;
-  let did_buy = false;
-  for (let ii = 0; ii < TOOLS_ROWS; ++ii) {
+  for (let ii = 0; ii < TOOL_TYPES.length; ++ii) {
     x = x0;
     let tool = tools[ii];
     if (!tool) {
-      if (!did_buy && tool_count < 10) {
-        if (ii === 1 && !tools[2]) {
-          font.draw({
-            x, y, w,
-            align: ALIGN.HCENTER,
-            text: 'Buy new tool: $100',
-          });
-          y += text_height + 1;
-        }
-        did_buy = true;
-        let can_afford = money >= NEW_TOOL_COST;
-        const BUY_W = BUTTON_H + IMG_H;
-        let buy_param = {
-          x: x + floor((w - BUY_W * 3 - 2 * 2)/2),
-          y,
-          w: BUY_W,
-          h: BUTTON_H,
-          frame: 0, // aspect hacky fix
-          disabled: !can_afford,
-        };
-        if (button({
-          ...buy_param,
-          img: autoAtlas('game', 'add-laser'),
-          tooltip: 'Buy a new T1 Laser for $100',
-          disabled_focusable: true,
-        })) {
-          // playUISound('upgrade');
-          game_state.buyTool(ii, 'laser');
-        }
-        if (button({
-          ...buy_param,
-          x: buy_param.x + BUY_W + 2,
-          img: autoAtlas('game', 'add-drill'),
-          tooltip: 'Buy a new T1 Drill for $100',
-          disabled_focusable: true,
-        })) {
-          // playUISound('upgrade');
-          game_state.buyTool(ii, 'drill');
-        }
-        if (button({
-          ...buy_param,
-          x: buy_param.x + (BUY_W + 2) * 2,
-          img: autoAtlas('game', 'add-acid'),
-          tooltip: 'Buy a new T1 Acid for $100',
-          disabled_focusable: true,
-        })) {
-          // playUISound('upgrade');
-          game_state.buyTool(ii, 'acid');
-        }
+      let tool_type = TOOL_TYPES[ii];
+      let can_afford = money >= NEW_TOOL_COST;
+      let buy_param = {
+        x,
+        y,
+        w: BUY_W,
+        h: BUTTON_H,
+        frame: 0, // aspect hacky fix
+        disabled: !can_afford,
+      };
+      if (button({
+        ...buy_param,
+        img: autoAtlas('game', `add-${tool_type}`),
+        tooltip: `Buy a T1 ${capitalize(tool_type)} for $${NEW_TOOL_COST}`,
+        disabled_focusable: true,
+      })) {
+        // playUISound('upgrade');
+        game_state.buyTool(ii, tool_type);
       }
-      y += BUTTON_H + 1;
+      font.draw({
+        color: palette_font[NEW_TOOL_COST > money ? PAL_RED : PAL_GREEN],
+        x: x + BUY_W + 4,
+        y,
+        h: BUTTON_H,
+        align: ALIGN.VCENTER,
+        text: `$${NEW_TOOL_COST}`,
+      });
+      y += BUTTON_H + 2;
       continue;
     }
+    x += (BUY_W - FRAME_H) / 2;
     drawBox({
       x,
       y: y + 1,
@@ -1150,6 +1113,7 @@ function drawTools(): void {
       h: FRAME_H,
       z: Z.UI + 2,
     });
+    x += (BUY_W - FRAME_H) / 2;
     x += FRAME_H + TOOLS_PAD1;
     if (tool.tier === MAX_TOOL_TIER) {
       font.draw({
@@ -1166,12 +1130,13 @@ function drawTools(): void {
     } else {
       let upgrade_cost = game_state.upgradeCost(tool.tool, tool.tier);
       let can_afford = game_state.upgradeCanAfford(ii);
-      let tooltip_warn = game_state.toolTier(tool.tool) >= 5 ?
-        `\n\nWARNING: Your already have all 5 ${capitalize(tool.tool)} Skills unlocked, upgrading` +
-        ' this tool will not unlock additional skills.' : '';
+      // let tooltip_warn = game_state.toolTier(tool.tool) >= 5 ?
+      //   `\n\nWARNING: Your already have all 5 ${capitalize(tool.tool)} Skills unlocked, upgrading` +
+      //   ' this tool will not unlock additional skills.' : '';
+      let tooltip_warn = '';
       if (button({
         x, y, w: BUTTON_H, h: BUTTON_H,
-        disabled: can_afford === null || tool_count >= 10,
+        disabled: can_afford === null,
         img: autoAtlas('game', 'upgrade'),
         tooltip: `Upgrade tool, unlocking a new skill, paying the cost listed to the right.${tooltip_warn}`,
         disabled_focusable: true,
@@ -1221,24 +1186,8 @@ function drawTools(): void {
       });
       x += TOOLS_PRICE_W + TOOLS_PAD1;
     }
-    let is_last_tool = true;
-    for (let jj = 0; jj < tools.length; ++jj) {
-      if (jj !== ii && tools[jj]) {
-        is_last_tool = false;
-      }
-    }
-    if (button({
-      x, y, w: BUTTON_H, h: BUTTON_H,
-      disabled: is_last_tool,
-      img: autoAtlas('game', 'x'),
-      tooltip: 'Trash tool',
-      disabled_focusable: true,
-    })) {
-      // playUISound('trash');
-      game_state.trashTool(ii);
-    }
 
-    y += BUTTON_H + 1;
+    y += BUTTON_H + 2;
   }
 }
 
@@ -1891,8 +1840,8 @@ function drawNextUp(): void {
   }
 }
 
-const SKILLS_Y = 175;
-const SKILLS_W = BUTTON_H * 8 + 8;
+const SKILLS_Y = 150;
+const SKILLS_W = BUTTON_H * 5 + 4;
 const SKILLS_X = floor((game_width - SKILLS_W)/2);
 function drawSkillsInPrep(): void {
   let font = uiGetFont();
@@ -1930,21 +1879,15 @@ function drawSkillsInPrep(): void {
   y += text_height + 2;
 
   let skill_ids = [
-    'l1', 'l2', 'l3', 'l4', 'l5', 'a1', 'a2', 'a3',
-    'd1', 'd2', 'd3', 'd4', 'd5', 'a4', 'a5'
+    'l1', 'l2', 'l3', 'l4', 'l5',
+    'd1', 'd2', 'd3', 'd4', 'd5',
+    'a1', 'a2', 'a3', 'a4', 'a5'
   ];
   for (let ii = 0; ii < skill_ids.length; ++ii) {
     let skill_id = skill_ids[ii];
-    if (skill_id === 'd1') {
+    if (skill_id === 'd1' || skill_id === 'a1') {
       x = SKILLS_X;
       y += BUTTON_H + 3;
-    }
-    if (skill_id === 'a1' || skill_id === 'a4') {
-      x += 2;
-    }
-    if (skill_id === 'a4') {
-      y -= 2;
-      x += BUTTON_H/2;
     }
     drawSkill(x, y, skill_id, -1, skills_unlocked[skill_id] ? 'selectable' : 'disabled', {
       x: CRAFT_TOOLTIP_PANEL.x,
