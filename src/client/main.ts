@@ -1,20 +1,24 @@
 /* eslint n/global-require:off */
 // eslint-disable-next-line import/order
 const local_storage = require('glov/client/local_storage');
-local_storage.setStoragePrefix('glovjs-playground'); // Before requiring anything else that might load from this
+local_storage.setStoragePrefix('ld58'); // Before requiring anything else that might load from this
 
 import assert from 'assert';
+import { AnimationSequencer, animationSequencerCreate } from 'glov/client/animation';
 import { autoAtlas } from 'glov/client/autoatlas';
 import { platformParameterGet } from 'glov/client/client_config';
 import * as engine from 'glov/client/engine';
 import { ALIGN, Font, fontCreate, FontStyle, fontStyle, fontStyleColored } from 'glov/client/font';
-import { KEYS } from 'glov/client/input';
+import { eatAllInput, KEYS, mouseDownAnywhere } from 'glov/client/input';
+import { localStorageGetJSON, localStorageSetJSON } from 'glov/client/local_storage';
 import { markdownAuto } from 'glov/client/markdown';
 import { markdownSetColorStyle } from 'glov/client/markdown_renderables';
 import { netInit } from 'glov/client/net';
 import { spot, SPOT_DEFAULT_LABEL } from 'glov/client/spot';
 import { spriteSetGet } from 'glov/client/sprite_sets';
 import { Sprite, spriteCreate } from 'glov/client/sprites';
+import { fade } from 'glov/client/transition';
+import * as transition from 'glov/client/transition';
 import {
   button,
   buttonText,
@@ -34,6 +38,7 @@ import {
 import { randCreate, shuffleArray } from 'glov/common/rand_alea';
 import { TSMap } from 'glov/common/types';
 import { capitalize, clamp, plural } from 'glov/common/util';
+import { v3copy } from 'glov/common/vmath';
 import { palette, palette_font } from './palette';
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -230,6 +235,7 @@ type GameData = {
   next_up: OreEntry[];
   skills: (string|null)[];
   max_tier: number; // 2-4 only
+  seed: number[];
 };
 
 let rand_level = randCreate(1);
@@ -306,7 +312,7 @@ class GameState {
     }
     shuffleArray(next_up, rand_level);
 
-    if (engine.DEBUG) {
+    if (engine.DEBUG && false) {
       money = 9999;
       for (let ii = 0; ii < 6; ++ii) {
         inventory.push({
@@ -331,8 +337,21 @@ class GameState {
       next_up,
       skills: [],
       max_tier: 2,
+      seed: rand_level.exportState(),
     };
     this.applySkills();
+  }
+
+  saveGame(): void {
+    this.data.seed = rand_level.exportState();
+    localStorageSetJSON('save', this.data);
+  }
+
+  loadGame(): void {
+    let data = localStorageGetJSON<GameData>('save');
+    assert(data);
+    this.data = data;
+    rand_level.importState(data.seed);
   }
 
   applySkills(): void {
@@ -498,6 +517,7 @@ class GameState {
         };
       }
     }
+    this.saveGame();
   }
   skillBonuses(skill_index: number): {
     progress: number;
@@ -697,10 +717,28 @@ let game_state: GameState;
 let sprite_dither: Sprite;
 
 function init(): void {
-  game_state = new GameState();
   sprite_dither = spriteCreate({
     name: 'ditheroverlay',
   });
+
+  if (localStorageGetJSON<GameData>('save')) {
+    game_state = new GameState();
+    game_state.loadGame();
+  }
+}
+
+function startNewGame(): void {
+  game_state = new GameState();
+  // eslint-disable-next-line @typescript-eslint/no-use-before-define
+  engine.setState(statePrep);
+}
+
+const TRANSITION_TIME = 250;
+function queueTransition(): void {
+  // Why isn't this working?
+  if (engine.getFrameIndex() > 1) {
+    transition.queue(Z.TRANSITION_FINAL, fade.bind(null, TRANSITION_TIME));
+  }
 }
 
 let inv_highlight: number | null = null;
@@ -746,6 +784,7 @@ function drawCollector(): void {
         }
         game_state.data.money += entry.value;
         inventory[satisfies_request] = null;
+        game_state.saveGame();
       }
       if (buttonWasFocused()) {
         inv_highlight = satisfies_request;
@@ -1704,6 +1743,7 @@ function drawNextUp(): void {
       disabled,
     })) {
       stateCraftInit(ii);
+      queueTransition();
     }
     y += 2;
   }
@@ -1751,6 +1791,119 @@ function statePrep(dt: number): void {
   drawSkillsInPrep();
 }
 
+let title_anim: AnimationSequencer | null = null;
+let title_alpha = {
+  title: 0,
+  sub: 0,
+  button: 0,
+};
+function stateTitleInit(): void {
+  title_anim = animationSequencerCreate();
+  let t = 0;
+
+  t = title_anim.add(0, 300, (progress) => {
+    title_alpha.title = progress;
+  });
+  t = title_anim.add(t + 300, 300, (progress) => {
+    title_alpha.sub = progress;
+  });
+  title_anim.add(t + 500, 300, (progress) => {
+    title_alpha.button = progress;
+  });
+}
+const style_title = fontStyle(null, {
+  color: palette_font[PAL_WHITE],
+  outline_color: palette_font[PAL_BLACK - 1],
+  outline_width: 3,
+});
+function stateTitle(dt: number): void {
+  let black = palette[PAL_BLACK];
+  gl.clearColor(black[0], black[1], black[2], 1);
+  let font = uiGetFont();
+  let text_height = uiTextHeight();
+
+  let W = game_width;
+  let H = game_height;
+
+  if (title_anim && (mouseDownAnywhere() || engine.DEBUG && false)) {
+    title_anim.update(Infinity);
+    title_anim = null;
+  }
+  if (title_anim) {
+    if (!title_anim.update(dt)) {
+      title_anim = null;
+    } else {
+      eatAllInput();
+    }
+  }
+
+  let y = 30;
+
+  font.draw({
+    style: style_title,
+    alpha: title_alpha.title,
+    x: 0, y, w: W, align: ALIGN.HCENTER,
+    size: text_height * 4,
+    text: 'Gemwright',
+  });
+
+  font.draw({
+    color: palette_font[PAL_WHITE],
+    alpha: title_alpha.sub,
+    x: 0,
+    y: H - text_height * 2 - 3,
+    w: W, align: ALIGN.HCENTER,
+    text: 'By Jimb Esser for Ludum Dare 58',
+  });
+
+  const PROMPT_PAD = 8;
+  if (title_alpha.button) {
+    let button_w = BUTTON_H * 8;
+    let button_x0 = floor((W - button_w * 2 - PROMPT_PAD) / 2);
+    let button_h = BUTTON_H;
+    let color = [1,1,1, title_alpha.button] as const;
+    let y2 = H - BUTTON_H - 64;
+    let button_param = {
+      color,
+      w: button_w,
+      h: button_h,
+    };
+
+    if (button({
+      ...button_param,
+      x: button_x0,
+      y: y2,
+      text: game_state ? 'New Game' : 'Start Game',
+    })) {
+      queueTransition();
+      startNewGame();
+    }
+
+    if (buttonText({
+      ...button_param,
+      x: button_x0 + button_w + PROMPT_PAD,
+      y: y2,
+      text: 'High Scores',
+    })) {
+      queueTransition();
+      // TODO
+      // engine.setState(stateScores);
+    }
+
+    if (game_state) {
+      if (button({
+        ...button_param,
+        x: floor(button_x0 + (button_w + PROMPT_PAD)/2),
+        y: y2 + BUTTON_H + 4,
+        text: 'Resume Game',
+      })) {
+        queueTransition();
+        engine.setState(statePrep);
+      }
+    }
+  }
+}
+
 export function main(): void {
   if (platformParameterGet('reload_updates')) {
     // Enable auto-reload, etc
@@ -1787,10 +1940,15 @@ export function main(): void {
       button_blue_down: { atlas: 'game' },
     },
     pixel_perfect,
+    show_fps: false,
   })) {
     return;
   }
-  // let font = engine.font;
+  let black = palette[PAL_BLACK];
+  if (!engine.DEBUG) {
+    v3copy(engine.border_color, black);
+    v3copy(engine.border_clear_color, black);
+  }
 
   font_tiny = fontCreate(require('./img/font/04b03_8x1.json'), 'font/04b03_8x1');
 
@@ -1806,7 +1964,8 @@ export function main(): void {
     markdownSetColorStyle(key, font_styles_tooltip[key]!);
   }
 
-  engine.setState(statePrep);
+  stateTitleInit();
+  engine.setState(stateTitle);
   if (engine.DEBUG) {
     // stateCraftInit(2);
   }
