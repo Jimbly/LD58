@@ -111,8 +111,8 @@ const SKILLS: TSMap<SkillDef> = {
   d2: {
     name: 'Polish',
     // Qual 100 in 50, CD
-    quality: [22,24], // ratio 2.3
-    durability: 10,
+    quality: [23,25], // ratio 2.67 (but rounds poorly)
+    durability: 9,
     cooldown: 1,
   },
   a1: {
@@ -120,7 +120,7 @@ const SKILLS: TSMap<SkillDef> = {
     // Prog 100 in 60, temp +
     progress: [28, 30], // 2.0
     durability: 15,
-    temperament: 1,
+    temperament: 2,
   },
   a2: {
     name: 'Polish',
@@ -131,35 +131,34 @@ const SKILLS: TSMap<SkillDef> = {
 
   d3: {
     name: 'Hasty',
-    // Prog 60, dur 10, 50%, CD 3
-    progress: [60, 60],
-    durability: 10,
-    success: 50,
+    progress: [50, 55],
+    durability: 24,
     cooldown: 3,
   },
   d4: {
-    name: 'Prepare',
+    name: 'Finish It',
     // 100% extra Prog for next 4 turns, CD 14
     special: 'progress',
     special_amount: 100,
-    special_duration: 4,
+    special_duration: 3,
     cooldown: CDRARE,
+    temperament: 1,
   },
   d5: {
     name: 'Precise Carve',
     // 50% extra Qual for next 4 turns, CD 14
     special: 'quality',
-    special_amount: 50,
+    special_amount: 75,
     special_duration: 4,
-    cooldown: CDRARE,
+    cooldown: 9,
   },
   l3: {
-    name: 'Shear',
-    // Qual 25, dur 5, 60%, CD 3
-    quality: [25,25],
-    durability: 5,
-    success: 60,
+    name: 'Jack o\' All Trades',
+    quality: [8,9],
+    progress: [8,9],
+    durability: 7,
     cooldown: 3,
+    temperament: 1,
   },
   l4: {
     name: 'Venerate',
@@ -169,9 +168,9 @@ const SKILLS: TSMap<SkillDef> = {
   },
   l5: {
     name: 'Focus',
-    // 100% extra Qual for next 1 turn
+    // 200% extra Qual for next 1 turn
     special: 'quality',
-    special_amount: 100,
+    special_amount: 200,
     special_duration: 1,
     cooldown: 4,
   },
@@ -179,22 +178,22 @@ const SKILLS: TSMap<SkillDef> = {
     name: 'Repair',
     // dur +30, CD 5
     durability: -30,
-    cooldown: 5,
-  },
-  a4: {
-    name: 'Reinforce',
-    // 50% less dur for next 4 steps, CD 14
-    special: 'durability',
-    special_amount: -50,
-    special_duration: 4,
     cooldown: CDRARE,
   },
-  a5: {
+  a4: {
     name: 'Soften',
     // Ignore defenses for next 4 steps, CD 14
     special: 'pierce',
     special_amount: 100,
-    special_duration: 4,
+    special_duration: 11,
+    cooldown: CDRARE,
+  },
+  a5: {
+    name: 'Reinforce',
+    // 50% less dur for next 4 steps, CD 14
+    special: 'durability',
+    special_amount: -50,
+    special_duration: 7,
     cooldown: CDRARE,
   },
 };
@@ -315,9 +314,12 @@ class GameState {
           tier: 1 + rand_level.range(5),
         });
       }
-      tools[0].tier = 5;
+      tools[0].tier = 2;
       tools.push({
         tool: 'drill',
+        tier: 3,
+      }, {
+        tool: 'acid',
         tier: 5,
       });
     }
@@ -412,7 +414,7 @@ class GameState {
 
     let target = next_up[crafting];
     if (durability >= 0 && progress >= 100) {
-      let tier = floor(quality / 100) + 1;
+      let tier = min(5, floor(quality / 100) + 1);
       inventory.push({
         gem: target.gem,
         tier,
@@ -528,6 +530,9 @@ class GameState {
         --cooldowns[ii];
       }
     }
+
+    let special_mul = this.skillBonuses(skill_index);
+
     for (let ii = specials.length - 1; ii >= 0; --ii) {
       let spec = specials[ii];
       spec.special_duration--;
@@ -536,13 +541,11 @@ class GameState {
       }
     }
 
-    let special_mul = this.skillBonuses(skill_index);
-
     let skill = SKILLS[skill_id]!;
     if (skill.cooldown) {
       cooldowns[skill_index] = skill.cooldown;
     }
-    this.durability = clamp(round(this.durability - (skill.durability || 0) * special_mul.durability), -100, 100);
+    this.durability = clamp(this.durability - round((skill.durability || 0) * special_mul.durability), -100, 100);
 
     if (skill.success) {
       if (rand_craft.range(100) >= skill.success) {
@@ -558,7 +561,7 @@ class GameState {
     if (skill.progress) {
       let v = skill.progress[0] + rand_craft.range(skill.progress[1] - skill.progress[0] + 1);
       v *= special_mul.progress;
-      this.progress = clamp(round(this.progress + v), 0, 100);
+      this.progress = clamp(this.progress + round(v), 0, 100);
     }
 
     let dtemp = rand_craft.range(4);
@@ -1157,8 +1160,8 @@ const MAIN_PANEL = {
   h: 138,
 };
 const CRAFT_TOOLTIP_PANEL = {
-  x: (game_width - 244)/2,
-  w: 244,
+  x: (game_width - 264)/2,
+  w: 264,
   y: MAIN_PANEL.y + MAIN_PANEL.h + 2,
   h: 54,
 };
@@ -1524,7 +1527,7 @@ function stateCraft(dt: number): void {
         font_tiny.draw({
           x, y: y + BUTTON_H + 1,
           w: BUTTON_H,
-          text: `${ii + 1}`,
+          text: ii === 9 ? '0' : `${ii + 1}`,
           size: 8,
           align: ALIGN.HCENTER,
         });
@@ -1553,17 +1556,19 @@ function stateCraft(dt: number): void {
 
     let text: string = pair[0];
     if (text === 'Quality') {
-      let tier = floor(quality / 100);
+      let tier = min(4, floor(quality / 100));
       text = `Quality (T${tier+1})`;
       const GOAL_X = floor(BAR_MAX_W * 0.9) + tier * 3;
       // draw goal
-      drawHBox({
-        x: x + 2 + GOAL_X,
-        y: y + 15,
-        z: z + 1,
-        h: 8,
-        w: 3,
-      }, autoAtlas('game', 'bar-gold'));
+      if (tier < 4) {
+        drawHBox({
+          x: x + 2 + GOAL_X,
+          y: y + 15,
+          z: z + 1,
+          h: 8,
+          w: 3,
+        }, autoAtlas('game', 'bar-gold'));
+      }
       // draw current progress
       let bar_start = tier * 6;
       let bar_left = GOAL_X - bar_start;
@@ -1774,6 +1779,6 @@ export function main(): void {
 
   engine.setState(statePrep);
   if (engine.DEBUG) {
-    // stateCraftInit(2);
+    stateCraftInit(2);
   }
 }

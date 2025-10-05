@@ -12,8 +12,9 @@ Acknowledgements:
 
 Start with: `npm start` (after running `npm i` once)
 
+# TODO
 
-# Abilities (need 15 in 3 tools) - add more temperament changes to this
+# Abilities draft (need 15 in 3 tools) - add more temperament changes to this
 * L1 Basic: Prog 10, dur 5, no CD
 * D1 Basic: Prog 18, dur 10, no CD
 * A1 Polish: Qual 12, dur 5, CD 1
