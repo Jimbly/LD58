@@ -34,12 +34,14 @@ import {
   label,
   menuUp,
   panel,
+  playUISound,
   scaleSizes,
   setFontHeight,
   setPanelPixelScale,
   UIBox,
   uiGetFont,
   uiSetPanelColor,
+  UISounds,
   uiTextHeight,
 } from 'glov/client/ui';
 import { randCreate, shuffleArray } from 'glov/common/rand_alea';
@@ -136,6 +138,7 @@ type SkillDef = {
   special_amount?: number;
   special_duration?: number;
   success?: number;
+  sound: string;
 };
 const CDRARE = 14;
 const CDRARE2 = 29;
@@ -145,6 +148,7 @@ const SKILLS: TSMap<SkillDef> = {
     // Prog 100 in 40-50 dur
     progress: [11, 13], // ratio 2.4
     durability: 5,
+    sound: 'none',
   },
   l2: {
     name: 'Luminous Incision',
@@ -153,12 +157,14 @@ const SKILLS: TSMap<SkillDef> = {
     durability: 15,
     cooldown: 2,
     temperament: -1,
+    sound: 'none',
   },
   d1: {
     name: 'Earth Shatter',
     // Prog 100 in 50
     progress: [21, 23], // ratio 2.2
     durability: 10,
+    sound: 'none',
   },
   d2: {
     name: 'Harmonic Boring',
@@ -166,6 +172,7 @@ const SKILLS: TSMap<SkillDef> = {
     quality: [23,25], // ratio 2.67 (but rounds poorly)
     durability: 9,
     cooldown: 1,
+    sound: 'none',
   },
   a1: {
     name: 'Temper Alignment',
@@ -173,12 +180,14 @@ const SKILLS: TSMap<SkillDef> = {
     progress: [28, 30], // 2.0
     durability: 15,
     temperament: 2,
+    sound: 'none',
   },
   a2: {
     name: 'Virtuous Distillation',
     // Qual 100 in 35-50, high variance
     quality: [10, 15], // ratio 2.5, variance
     durability: 5,
+    sound: 'none',
   },
 
   d3: {
@@ -186,6 +195,7 @@ const SKILLS: TSMap<SkillDef> = {
     progress: [50, 55],
     durability: 24,
     cooldown: 3,
+    sound: 'none',
   },
   d4: {
     name: 'Finish It',
@@ -195,6 +205,7 @@ const SKILLS: TSMap<SkillDef> = {
     special_duration: 3,
     cooldown: CDRARE2,
     temperament: 1,
+    sound: 'buff1',
   },
   d5: {
     name: 'Stone Sense',
@@ -203,6 +214,7 @@ const SKILLS: TSMap<SkillDef> = {
     special_amount: 75,
     special_duration: 4,
     cooldown: 9,
+    sound: 'buff1',
   },
   l3: {
     name: 'Jack o\' All Trades',
@@ -211,12 +223,14 @@ const SKILLS: TSMap<SkillDef> = {
     durability: 7,
     cooldown: 3,
     temperament: 1,
+    sound: 'none',
   },
   l4: {
     name: 'Venerate',
     // Temp ++, CD 5
     temperament: 2,
     cooldown: 5,
+    sound: 'buff3',
   },
   l5: {
     name: 'Laser Focus',
@@ -225,12 +239,14 @@ const SKILLS: TSMap<SkillDef> = {
     special_amount: 200,
     special_duration: 1,
     cooldown: 4,
+    sound: 'buff3',
   },
   a3: {
     name: 'Repair',
     // dur +30, CD 5
     durability: -30,
     cooldown: CDRARE,
+    sound: 'buff2',
   },
   a4: {
     name: 'Soften',
@@ -239,6 +255,7 @@ const SKILLS: TSMap<SkillDef> = {
     special_amount: 100,
     special_duration: 11,
     cooldown: CDRARE2,
+    sound: 'buff2',
   },
   a5: {
     name: 'Precision',
@@ -247,6 +264,7 @@ const SKILLS: TSMap<SkillDef> = {
     special_amount: -50,
     special_duration: 7,
     cooldown: CDRARE,
+    sound: 'buff2',
   },
 };
 
@@ -362,7 +380,7 @@ class GameState {
     }
     shuffleArray(next_up, rand_level);
 
-    if (engine.DEBUG && false) {
+    if (engine.DEBUG && true) {
       money = 1000000;
       for (let ii = 0; ii < 12; ++ii) {
         inventory.push({
@@ -877,9 +895,9 @@ function drawCollector(): void {
         // eslint-disable-next-line prefer-template
         tooltip: 'Sell the highlighted gem ' + (ii < 3 ? '(repeatable)' : 'to a collector') +
           ((inventory[satisfies_request]!.tier > entry.tier) ?
-            '\n\nWARNING: You are selling a MORE VALUABLE gem than is specifically required' : '')
+            '\n\nWARNING: You are selling a MORE VALUABLE gem than is specifically required' : ''),
+        sound_button: 'sell',
       })) {
-        // playUISound('sell');
         if (ii >= 3) {
           entry.done = true;
         }
@@ -1139,8 +1157,8 @@ function drawTools(): void {
         img: autoAtlas('game', `add-${tool_type}`),
         tooltip: `Buy a T1 ${capitalize(tool_type)} for $${NEW_TOOL_COST}`,
         disabled_focusable: true,
+        sound_button: 'upgrade',
       })) {
-        // playUISound('upgrade');
         game_state.buyTool(ii, tool_type);
       }
       font.draw({
@@ -1202,8 +1220,8 @@ function drawTools(): void {
         img: autoAtlas('game', 'upgrade'),
         tooltip: `Upgrade tool, unlocking a new skill, paying the cost listed to the right.${tooltip_warn}`,
         disabled_focusable: true,
+        sound_button: 'upgrade',
       })) {
-        // playUISound('upgrade');
         game_state.upgrade(ii);
       }
       if (buttonWasFocused()) {
@@ -1414,6 +1432,7 @@ function drawSkill(
       disabled,
       hotkey: ii === 9 ? KEYS['0'] : KEYS['1'] + ii,
       disabled_focusable: true,
+      sound_button: SKILLS[skill_id]!.sound,
     })) {
       game_state.activateSkill(ii);
     }
@@ -1593,6 +1612,77 @@ function drawSkill(
   }
 }
 
+const MUSIC_KEYS = ['progress', 'quality'] as const;
+type MusicKey = typeof MUSIC_KEYS[number];
+type MusicState = {
+  value: number;
+  last_played: number;
+  play_to: number;
+  play_countdown: number;
+};
+let music_last_values = {} as Record<MusicKey, MusicState>;
+function tickMusicalEffects(): void {
+  let dt = engine.getFrameDt();
+  if (autoResetSkippedFrames('musicfx')) {
+    for (let ii = 0; ii < MUSIC_KEYS.length; ++ii) {
+      let key = MUSIC_KEYS[ii];
+      music_last_values[key] = {
+        value: game_state[key],
+        last_played: 0,
+        play_to: 0,
+        play_countdown: 0,
+      };
+    }
+  }
+
+  for (let ii = 0; ii < MUSIC_KEYS.length; ++ii) {
+    let key = MUSIC_KEYS[ii];
+    let record = music_last_values[key];
+    let lastv = record.value;
+    let v = game_state[key];
+    if (lastv !== v) {
+      // some change happened
+      record.value = v;
+      let newscale = 2 + floor(v * 7/100);
+      if (key === 'quality') {
+        if (floor(lastv/100) !== floor(v/100)) {
+          // increased tier, play highest note
+          newscale = 9;
+        } else {
+          v %= 100;
+          newscale = 2 + floor(v * 7/100);
+        }
+      }
+      record.play_to = newscale;
+      if (record.play_countdown) {
+        // currently playing, just let it continue at the same rhythm
+        if (record.last_played === record.play_to) {
+          // but, not going to play anything
+          --record.last_played;
+        }
+      } else {
+        record.last_played = max(0, min(record.last_played, newscale - 2));
+        record.play_countdown = 1;
+      }
+    }
+
+    if (record.play_countdown) {
+      if (dt >= record.play_countdown) {
+        if (record.last_played >= record.play_to) {
+          // done
+          record.play_countdown = 0;
+        } else {
+          ++record.last_played;
+          playUISound(`scale${ii+1}-${record.last_played}`);
+          record.play_countdown = 192 - (dt - record.play_countdown);
+        }
+      } else {
+        record.play_countdown -= dt;
+      }
+    }
+  }
+}
+
 function stateCraft(dt: number): void {
   let font = uiGetFont();
   let text_height = uiTextHeight();
@@ -1626,6 +1716,9 @@ function stateCraft(dt: number): void {
       h: 62,
     });
     if (done_good) {
+      if (autoResetSkippedFrames('done')) {
+        playUISound('success');
+      }
       let xx = x + (w - FRAME_H*2)/2;
       let yy = y + 10;
       drawBox({
@@ -1649,6 +1742,10 @@ function stateCraft(dt: number): void {
         w: FRAME_H * 2,
         h: FRAME_H * 2,
       });
+    } else {
+      if (autoResetSkippedFrames('done')) {
+        playUISound('fail');
+      }
     }
   }
   y += 3;
@@ -1845,8 +1942,9 @@ function stateCraft(dt: number): void {
     eat_clicks: false,
     sprite: autoAtlas('game', 'panel_blue'),
   });
-}
 
+  tickMusicalEffects();
+}
 function stateCraftInit(index: number): void {
   game_state.startCraft(index);
   engine.setState(stateCraft);
@@ -2284,6 +2382,21 @@ export function main(): void {
     ui_sprites = spriteSetGet('pixely');
   }
 
+  let sounds: UISounds = {};
+  for (let ii = 0; ii < 11; ++ii) {
+    for (let jj = 1; jj <= 2; ++jj) {
+      let key = `scale${jj}-${ii}`;
+      sounds[key] = key;
+    }
+  }
+  sounds.fail = 'fail';
+  sounds.success = 'success';
+  sounds.upgrade = 'upgrade';
+  sounds.sell = 'sell';
+  sounds.buff1 = 'buff1';
+  sounds.buff2 = 'buff2';
+  sounds.buff3 = 'buff3';
+
   if (!engine.startup({
     game_width,
     game_height,
@@ -2304,6 +2417,7 @@ export function main(): void {
       button_unselected_rollover: { atlas: 'game' },
       button_unselected_down: { atlas: 'game' },
     },
+    ui_sounds: sounds,
     pixel_perfect,
     show_fps: false,
   })) {
