@@ -43,9 +43,13 @@ import {
 } from 'glov/client/ui';
 import { randCreate, shuffleArray } from 'glov/common/rand_alea';
 import { TSMap } from 'glov/common/types';
-import { capitalize, clamp, plural } from 'glov/common/util';
+import { capitalize as capitalizeOrig, clamp, plural } from 'glov/common/util';
 import { v3copy } from 'glov/common/vmath';
 import { palette, palette_font } from './palette';
+
+function capitalize(s: string): string {
+  return capitalizeOrig(s).replace('Acid', 'Alchemical');
+}
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const { abs, max, min, ceil, round, floor } = Math;
@@ -332,7 +336,7 @@ class GameState {
     }
     shuffleArray(next_up, rand_level);
 
-    if (engine.DEBUG && false) {
+    if (engine.DEBUG && true) {
       money = 1000000;
       for (let ii = 0; ii < 12; ++ii) {
         inventory.push({
@@ -1316,7 +1320,7 @@ function drawSkill(
   //   align: ALIGN.HVCENTER,
   //   text: skill_id.toUpperCase(),
   // });
-  let icon = autoAtlas('game', tool_type);
+  let icon = autoAtlas('game', skill_id);
   let focused = false;
   if (skill_style === 'button') {
     let { cooldowns, specials } = game_state;

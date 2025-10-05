@@ -16,7 +16,6 @@ Start with: `npm start` (after running `npm i` once)
 
 # TODO
 * Play all the way through
-* Unique icons per skill
 # Stretch
 * Animate progress
 * Sound effects - ascending scaled for each of prog/qual?
