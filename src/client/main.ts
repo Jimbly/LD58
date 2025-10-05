@@ -362,7 +362,7 @@ class GameState {
     }
     shuffleArray(next_up, rand_level);
 
-    if (engine.DEBUG && true) {
+    if (engine.DEBUG && false) {
       money = 1000000;
       for (let ii = 0; ii < 12; ++ii) {
         inventory.push({
@@ -563,18 +563,30 @@ class GameState {
     if (!any_done) {
       // none completed, cycle one which is not satisfied
       let options = [];
+      let satisfy_used = -1;
       for (let ii = 3; ii < requests.length; ++ii) {
         let entry = requests[ii];
-        if (!entry.done && this.satisfiesRequest(entry) === null) {
-          options.push(ii);
+        if (!entry.done) {
+          let idx = this.satisfiesRequest(entry);
+          if (idx === null || idx === satisfy_used) {
+            // not satisfied, or satisfied by a gem that already saved a different entry
+            options.push(ii);
+          } else {
+            satisfy_used = idx;
+          }
         }
       }
       if (!options.length) {
         // all are satisfied, cycle one that is a different color than what we just got
+        let did_protect = false;
         for (let ii = 3; ii < requests.length; ++ii) {
           let entry = requests[ii];
-          if (!entry.done && entry.gem !== target.gem) {
-            options.push(ii);
+          if (!entry.done) {
+            if (entry.gem !== target.gem || did_protect) {
+              options.push(ii);
+            } else {
+              did_protect = true;
+            }
           }
         }
       }
@@ -583,12 +595,28 @@ class GameState {
         requests[idx].done = true;
       }
     }
+
+    function hasRequest(gem: GemType, tier: number): boolean {
+      for (let ii = 3; ii < requests.length; ++ii) {
+        let entry = requests[ii];
+        if (!entry.done && entry.gem === gem && entry.tier === tier) {
+          return true;
+        }
+      }
+      return false;
+    }
+
     for (let ii = 3; ii < requests.length; ++ii) {
       let entry = requests[ii];
       if (entry.done) {
+        let gem = GEM_TYPES[rand_level.range(GEM_TYPES.length)];
         let tier = 2 + rand_level.range(this.data.max_tier - 2 + 1);
+        while (hasRequest(gem, tier)) {
+          gem = GEM_TYPES[rand_level.range(GEM_TYPES.length)];
+          tier = 2 + rand_level.range(this.data.max_tier - 2 + 1);
+        }
         requests[ii] = {
-          gem: GEM_TYPES[rand_level.range(GEM_TYPES.length)],
+          gem,
           tier,
           value: requestValueForTier(tier),
           done: false,
@@ -886,12 +914,16 @@ function drawCollector(): void {
       w: IMG_H,
       h: IMG_H,
       z: framepos.z,
+      color: entry.done ? [1,1,1,0.5] : undefined,
     });
     framepos.z++;
-    autoAtlas('game', `tier${entry.tier}`).draw(framepos);
+    autoAtlas('game', `tier${entry.tier}`).draw({
+      ...framepos,
+      color: entry.done ? [0.4, 0.4, 0.5, 1] : undefined,
+    });
     x += FRAME_H + 2;
     font.draw({
-      color: palette_font[entry.done || satisfies_request ? PAL_YELLOW : PAL_GREEN],
+      color: palette_font[entry.done ? PAL_BLACK - 2 : satisfies_request ? PAL_YELLOW : PAL_GREEN],
       x, y, h: BUTTON_H,
       align: ALIGN.VCENTER,
       text: `$${entry.value}`,
@@ -2332,8 +2364,8 @@ export function main(): void {
   stateTitleInit();
   engine.setState(stateTitle);
   if (engine.DEBUG) {
-    stateCraftInit(2);
+    // stateCraftInit(2);
     // engine.setState(stateScores);
-    //engine.setState(statePrep);
+    engine.setState(statePrep);
   }
 }

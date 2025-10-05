@@ -15,7 +15,7 @@ Acknowledgements:
 Start with: `npm start` (after running `npm i` once)
 
 # TODO
-* Play all the way through
+* Nothing
 # Stretch
 * Sound effects - ascending scaled for each of prog/qual?
 * Music
