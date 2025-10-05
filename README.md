@@ -15,7 +15,15 @@ Acknowledgements:
 Start with: `npm start` (after running `npm i` once)
 
 # TODO
+* Play all the way through
 * Unique icons per skill
+# Stretch
+* Animate progress
+* Sound effects - ascending scaled for each of prog/qual?
+* Music
+# Publish
+* Social share image
+* Screenshots / cover image
 
 # Abilities draft (need 15 in 3 tools) - add more temperament changes to this
 * L1 Basic: Prog 10, dur 5, no CD

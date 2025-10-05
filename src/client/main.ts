@@ -328,7 +328,7 @@ class GameState {
     }
     shuffleArray(next_up, rand_level);
 
-    if (engine.DEBUG) {
+    if (engine.DEBUG && false) {
       money = 9999;
       for (let ii = 0; ii < 6; ++ii) {
         inventory.push({
@@ -475,6 +475,11 @@ class GameState {
 
     let target = next_up[crafting];
     if (durability >= 0 && progress >= 100) {
+      for (let ii = inventory.length - 1; ii >= 0; --ii) {
+        if (!inventory[ii]) {
+          inventory.splice(ii, 1);
+        }
+      }
       let tier = min(5, floor(quality / 100) + 1);
       inventory.push({
         gem: target.gem,
@@ -784,6 +789,11 @@ function drawCollector(): void {
     align: ALIGN.HCENTER,
     text: 'Sell',
   });
+  label({
+    x, y, w,
+    text: ' ',
+    tooltip: 'A gem of any tier can be sold for $100.\n\nHINT: If the gem is T2 or higher, sell to a Collector instead.'
+  });
   y += text_height + 2;
 
   let { requests, inventory } = game_state.data;
@@ -856,6 +866,14 @@ function drawCollector(): void {
     y += BUTTON_H + 1;
     if (ii === 2) {
       y += 2;
+      label({
+        x: COLLECTOR_X, y, w,
+        h: text_height * 2 - 6,
+        text: ' ',
+        tooltip: 'Collectors pay more for gems.\n\n' +
+        'Each day, any fulfilled Collectors will come back with a new offer, and up to 1 existing offer' +
+        ' will also refresh.',
+      });
       font.draw({
         x: COLLECTOR_X, y, w,
         align: ALIGN.HCENTER,
@@ -880,6 +898,12 @@ function drawPersonalCollection(): void {
   let x = COLLECTOR_X;
   let y = PERSONAL_Y;
   let w = COLLECTOR_W;
+  label({
+    x, y: y + 4, w,
+    h: text_height * 4 - 3,
+    text: ' ',
+    tooltip: 'Collect a T5 gem of each type to win the game.'
+  });
   font.draw({
     x, y, w,
     align: ALIGN.HCENTER,
@@ -1014,7 +1038,7 @@ const TOOLS_PAD1 = 4;
 const TOOLS_PRICE_W = 36;
 const TOOLS_W = FRAME_H + TOOLS_PAD1 + BUTTON_H + 2 + FRAME_H + 1 + TOOLS_PRICE_W + TOOLS_PAD1 + BUTTON_H;
 const TOOLS_X = floor((game_width - TOOLS_W)/2);
-const TOOLS_Y = 66;
+const TOOLS_Y = 64;
 function drawTools(): void {
   let font = uiGetFont();
   let text_height = uiTextHeight();
@@ -1022,9 +1046,11 @@ function drawTools(): void {
   let y = TOOLS_Y;
   let w = TOOLS_W;
   let { money, tools } = game_state.data;
-  font.draw({
+  label({
     x, y, w,
     text: 'Tools',
+    tooltip: 'Tools unlock skills to assist in extracting gems of higher quality,' +
+      ' up to 5 skills of each tool class, and 10 skills total.'
   });
   let tool_count = 0;
   for (let ii = 0; ii < tools.length; ++ii) {
@@ -1040,7 +1066,7 @@ function drawTools(): void {
     align: ALIGN.HRIGHT,
     text: `${tool_count} / 10`,
   });
-  y += text_height + 2;
+  y += text_height + 1;
 
   let x0 = x;
   let did_buy = false;
@@ -1314,11 +1340,13 @@ const font_style_cooldown = fontStyle(null, {
   outline_color: palette_font[PAL_BLACK],
   outline_width: 2.5,
 });
-function drawSkill(x: number, y: number, ii: number, as_button: boolean, tooltip_pos: UIBox): void {
+function drawSkill(
+  x: number, y: number,
+  skill_id: string | null, ii: number, as_button: boolean, tooltip_pos: UIBox,
+  unavailable: boolean,
+): void {
   let font = uiGetFont();
-  let { skills } = game_state.data;
   let z = Z.UI;
-  let skill_id = skills[ii] || null;
   if (!skill_id) {
     drawBox({
       x: x + 1,
@@ -1336,6 +1364,7 @@ function drawSkill(x: number, y: number, ii: number, as_button: boolean, tooltip
   //   align: ALIGN.HVCENTER,
   //   text: skill_id.toUpperCase(),
   // });
+  let icon = autoAtlas('game', tool_type);
   let focused = false;
   if (as_button) {
     let { cooldowns, specials } = game_state;
@@ -1367,7 +1396,7 @@ function drawSkill(x: number, y: number, ii: number, as_button: boolean, tooltip
     if (button({
       x, y,
       w: BUTTON_H, h: BUTTON_H,
-      img: autoAtlas('game', tool_type),
+      img: icon,
       disabled,
       hotkey: ii === 9 ? KEYS['0'] : KEYS['1'] + ii,
       disabled_focusable: true,
@@ -1376,12 +1405,27 @@ function drawSkill(x: number, y: number, ii: number, as_button: boolean, tooltip
     }
     focused = buttonWasFocused();
   } else {
-    button({
-      x, y,
-      w: BUTTON_H, h: BUTTON_H,
-      img: autoAtlas('game', tool_type),
-      draw_only: true,
-    });
+    if (unavailable) {
+      drawBox({
+        x, y,
+        w: BUTTON_H, h: BUTTON_H,
+      }, autoAtlas('game', 'item-empty'), 1);
+      icon.draw({
+        x: x + 3,
+        y: y + 3,
+        z: Z.UI + 1,
+        w: IMG_H,
+        h: IMG_H,
+        color: [1, 1, 1, 0.5],
+      });
+    } else {
+      button({
+        x, y,
+        w: BUTTON_H, h: BUTTON_H,
+        img: icon,
+        draw_only: true,
+      });
+    }
     focused = spot({
       def: SPOT_DEFAULT_LABEL,
       x, y, w: BUTTON_H, h: BUTTON_H,
@@ -1583,10 +1627,13 @@ function stateCraft(dt: number): void {
     w,
     h: text_height * 2 - 4,
     // eslint-disable-next-line prefer-template
-    tooltip: `${TEMP[temperament + 1][1]} Temperament:` +
+    tooltip: `Ore temperament is currently ${TEMP[temperament + 1][1]}:` +
       (tempbonus ?
         `\n [c=${tempbonus < 0 ? 'red' : tempbonus > 0 ? 'green' : '0'}]${tempbonus > 0 ? '+' : ''}${tempbonus}%[/c]` +
-        ' to Progress and Quality ' : '\n No bonus or penalty'),
+        ' to Progress and Quality ' : '\n No bonus or penalty') +
+      '\n\nMECHANICS: Benign and Equable temperament have a 50% chance to change up or down.\n' +
+      'Malign and Exalted will always change.\n' +
+      'This is further affected by some skills.',
     text: '',
   });
   font.draw({
@@ -1634,7 +1681,7 @@ function stateCraft(dt: number): void {
     let { skills } = game_state.data;
     for (let ii = 0; ii < 10; ++ii) {
       let skill_id = skills[ii] || null;
-      drawSkill(x, y, ii, true, CRAFT_TOOLTIP_PANEL);
+      drawSkill(x, y, skill_id, ii, true, CRAFT_TOOLTIP_PANEL, false);
       if (skill_id) {
         font_tiny.draw({
           x, y: y + BUTTON_H + 1,
@@ -1654,14 +1701,20 @@ function stateCraft(dt: number): void {
   const BAR_MAX_W = w - 4;
   const BAR_SECTION_H = 25;
   ([
-    ['Durability', -1, durability, 'bar-red'],
-    ['Progress', -1, progress, 'bar-green'],
-    ['Quality', 0, quality, 'bar-cyan'],
+    ['Durability', -1, durability, 'bar-red', 'If [c=red]Durability[/c] goes under 0, the ore is ruined.'],
+    // eslint-disable-next-line @stylistic/max-len
+    ['Progress', -1, progress, 'bar-green', 'Reach [c=green]Progress[/c] of 100 before [c=red]Durability[/c] goes negative to extract the gem.[/c]'],
+    ['Quality', 0, quality, 'bar-cyan', 'Every 100 [c=cyan]Quality[/c] increases the gem Tier by 1, to a max of 5.'],
   ] as const).forEach(function (pair) {
     drawHBox({
       x, y, w,
       h: BAR_SECTION_H,
     }, autoAtlas('game', 'bar-bg'));
+    label({
+      x, y, w, h: BAR_SECTION_H-2,
+      text: ' ',
+      tooltip: pair[4],
+    });
 
     let v = pair[2];
     let vw = clamp(3 + round(v/100 * (BAR_MAX_W - 3)), 3, v === 100 ? BAR_MAX_W : BAR_MAX_W - 1);
@@ -1758,24 +1811,37 @@ function stateCraftInit(index: number): void {
 }
 
 function drawNextUp(): void {
-  let font = uiGetFont();
   let text_height = uiTextHeight();
   let x = NEXTUP_X;
   let y = NEXTUP_Y;
   let w = NEXTUP_W;
-  font.draw({
+  label({
     x, y, w,
     align: ALIGN.HCENTER,
     text: 'Next Ore',
+    tooltip: 'Choose an available ore to start extracting a gem.' +
+      '  The gem type is indicated by the color within the ore.\n\nResistances to certain tool types are also shown.'
   });
   y += text_height + 3;
 
-  let { next_up, inventory } = game_state.data;
+  let { next_up, inventory, days } = game_state.data;
   let disabled = inventory.length === INV_COLS * INV_ROWS && !inventory.includes(null);
+  let hide = days === 1;
   for (let ii = 0; ii < next_up.length; ++ii) {
     let entry = next_up[ii];
     let y0 = y;
     y += 3;
+    if (hide && ii !== 0) { // first one is 0 resistance to lasers
+      continue;
+    }
+    font_tiny.draw({
+      size: 8,
+      x,
+      y: y + 1,
+      w: w - 4,
+      align: ALIGN.HRIGHT,
+      text: `${ii + 1}`,
+    });
     y = drawOreCard(x, y, w, entry, false);
     y += 4;
 
@@ -1784,6 +1850,7 @@ function drawNextUp(): void {
       w, h: y - y0,
       base_name: 'button_blue',
       text: ' ',
+      hotkey: KEYS['1'] + ii,
       disabled,
     })) {
       stateCraftInit(ii);
@@ -1794,7 +1861,7 @@ function drawNextUp(): void {
 }
 
 const SKILLS_Y = 175;
-const SKILLS_W = BUTTON_H * 5 + 4;
+const SKILLS_W = BUTTON_H * 8 + 8;
 const SKILLS_X = floor((game_width - SKILLS_W)/2);
 function drawSkillsInPrep(): void {
   let font = uiGetFont();
@@ -1808,17 +1875,30 @@ function drawSkillsInPrep(): void {
   });
   y += text_height + 2;
 
-  for (let ii = 0; ii < 10; ++ii) {
-    if (ii === 5) {
+  let skill_ids = [
+    'l1', 'l2', 'l3', 'l4', 'l5', 'a1', 'a2', 'a3',
+    'd1', 'd2', 'd3', 'd4', 'd5', 'a4', 'a5'
+  ];
+  let { skills } = game_state.data;
+  for (let ii = 0; ii < skill_ids.length; ++ii) {
+    let skill_id = skill_ids[ii];
+    if (skill_id === 'd1') {
       x = SKILLS_X;
-      y += BUTTON_H + 1;
+      y += BUTTON_H + 3;
     }
-    drawSkill(x, y, ii, false, {
+    if (skill_id === 'a1' || skill_id === 'a4') {
+      x += 2;
+    }
+    if (skill_id === 'a4') {
+      y -= 2;
+      x += BUTTON_H/2;
+    }
+    drawSkill(x, y, skill_id, -1, false, {
       x: CRAFT_TOOLTIP_PANEL.x,
       w: CRAFT_TOOLTIP_PANEL.w,
-      y: y - CRAFT_TOOLTIP_PANEL.h - 2,
+      y: y - CRAFT_TOOLTIP_PANEL.h - 1,
       h: CRAFT_TOOLTIP_PANEL.h,
-    });
+    }, !skills.includes(skill_id));
     x += BUTTON_H + 1;
   }
 }
