@@ -1637,11 +1637,11 @@ function stateCraft(dt: number): void {
     w,
     h: text_height * 2 - 4,
     // eslint-disable-next-line prefer-template
-    tooltip: `Ore temperament is currently ${TEMP[temperament + 1][1]}:` +
+    tooltip: `Ore temperament is ${TEMP[temperament + 1][1]}:` +
       (tempbonus ?
         `\n [c=${tempbonus < 0 ? 'red' : tempbonus > 0 ? 'green' : '0'}]${tempbonus > 0 ? '+' : ''}${tempbonus}%[/c]` +
         ' to Progress and Quality ' : '\n No bonus or penalty') +
-      '\n\nMECHANICS: Benign and Equable temperament have a 50% chance to change up or down.\n' +
+      '\n\nBenign and Equable temperament have a 50% chance to change up or down.\n' +
       'Malign and Exalted will always change.\n' +
       'This is further affected by some skills.',
     text: '',
