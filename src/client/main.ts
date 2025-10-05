@@ -18,7 +18,7 @@ import {
   scoreAlloc,
   ScoreSystem,
 } from 'glov/client/score';
-// import { scoresDraw } from 'glov/client/score_ui';
+import { scoresDraw } from 'glov/client/score_ui';
 import { spot, SPOT_DEFAULT_LABEL } from 'glov/client/spot';
 import { spriteSetGet } from 'glov/client/sprite_sets';
 import { Sprite, spriteCreate } from 'glov/client/sprites';
@@ -326,12 +326,12 @@ class GameState {
     }
     shuffleArray(next_up, rand_level);
 
-    if (engine.DEBUG && false) {
+    if (engine.DEBUG) {
       money = 9999;
       for (let ii = 0; ii < 6; ++ii) {
         inventory.push({
           gem: GEM_TYPES[rand_level.range(GEM_TYPES.length)],
-          tier: 1 + rand_level.range(5),
+          tier: 5, // 1 + rand_level.range(5),
         });
       }
       tools[0].tier = 2;
@@ -353,7 +353,7 @@ class GameState {
       max_tier: 2,
       seed: rand_level.exportState(),
       won: false,
-      days: 0,
+      days: 1,
     };
     this.applySkills();
   }
@@ -782,7 +782,7 @@ function drawCollector(): void {
     align: ALIGN.HCENTER,
     text: 'Sell',
   });
-  y += text_height + 3;
+  y += text_height + 2;
 
   let { requests, inventory } = game_state.data;
   for (let ii = 0; ii < requests.length; ++ii) {
@@ -889,7 +889,7 @@ function drawPersonalCollection(): void {
     align: ALIGN.HCENTER,
     text: 'Collection',
   });
-  y += text_height + 3;
+  y += text_height + 2;
 
   x = COLLECTOR_X + floor((COLLECTOR_W - FRAME_H * 3 - 2*2)/2);
   let did_win = true;
@@ -933,6 +933,16 @@ function drawPersonalCollection(): void {
 
     x += FRAME_H + 2;
   }
+
+  font_tiny.draw({
+    size: 8,
+    x: COLLECTOR_X,
+    y: game_height - 2,
+    w: COLLECTOR_W,
+    align: ALIGN.VBOTTOM | ALIGN.HCENTER,
+    text: `Day ${game_state.data.days}`,
+  });
+
   if (did_win && !game_state.data.won) {
     // TODO: trigger victory!
     game_state.data.won = true;
@@ -1818,6 +1828,19 @@ function statePrep(dt: number): void {
   drawInventory();
   drawNextUp();
   drawSkillsInPrep();
+
+  if (button({
+    x: 1,
+    y: 1,
+    w: BUTTON_H,
+    img: autoAtlas('game', 'x'),
+    tooltip: 'Save and Exit to title screen',
+  })) {
+    game_state.saveGame();
+    queueTransition();
+    // eslint-disable-next-line @typescript-eslint/no-use-before-define
+    engine.setState(stateTitle);
+  }
 }
 
 let title_anim: AnimationSequencer | null = null;
@@ -1854,7 +1877,7 @@ function stateTitle(dt: number): void {
   let W = game_width;
   let H = game_height;
 
-  if (title_anim && (mouseDownAnywhere() || engine.DEBUG && false)) {
+  if (title_anim && (mouseDownAnywhere() || engine.DEBUG)) {
     title_anim.update(Infinity);
     title_anim = null;
   }
@@ -1915,8 +1938,8 @@ function stateTitle(dt: number): void {
       text: 'High Scores',
     })) {
       queueTransition();
-      // TODO
-      // engine.setState(stateScores);
+      // eslint-disable-next-line @typescript-eslint/no-use-before-define
+      engine.setState(stateScores);
     }
 
     if (game_state) {
@@ -1932,6 +1955,95 @@ function stateTitle(dt: number): void {
     }
   }
 }
+
+const SCORE_COLUMNS = [
+  // widths are just proportional, scaled relative to `width` passed in
+  { name: '', width: 3, align: ALIGN.HFIT | ALIGN.HRIGHT | ALIGN.VCENTER },
+  { name: 'Name', width: 12, align: ALIGN.HFIT | ALIGN.VCENTER },
+  { name: 'Won', width: 4 },
+  { name: 'Days', width: 4 },
+  { name: 'Money', width: 8 },
+];
+const style_score = fontStyleColored(null, palette_font[2]);
+const style_me = fontStyleColored(null, palette_font[1]);
+const style_header = fontStyleColored(null, palette_font[2]);
+function myScoreToRow(row: unknown[], score: Score): void {
+  row.push(score.won ? 'Y' : 'N', score.days, `$${score.money}`);
+}
+
+function stateScores(dt: number): void {
+  let black = palette[PAL_BLACK];
+  gl.clearColor(black[0], black[1], black[2], 1);
+
+  let x = 4;
+  let y = 3;
+  const CHW = 10;
+  const CHH = 16;
+  const LINEH = CHH;
+  let font = uiGetFont();
+
+  if (buttonText({
+    x: 1,
+    y: 1,
+    w: CHW * 6,
+    text: 'BACK',
+    hotkey: KEYS.ESC,
+  })) {
+    queueTransition();
+    engine.setState(stateTitle);
+  }
+
+  font.draw({
+    style: style_title,
+    x: 0,
+    y,
+    w: game_width,
+    text: 'HIGH SCORES',
+    size: CHH * 2,
+    align: ALIGN.HCENTER,
+  });
+  y += CHH * 2 + 3;
+
+  let w = game_width - 8;
+  y += LINEH;
+  let text_height = uiTextHeight();
+  scoresDraw<Score>({
+    score_system,
+    allow_rename: true,
+    x,
+    width: w,
+    y,
+    height: game_height - y,
+    z: Z.UI,
+    size: text_height,
+    line_height: text_height + 2,
+    level_index: 0,
+    columns: SCORE_COLUMNS,
+    scoreToRow: myScoreToRow,
+    style_score,
+    style_me,
+    style_header,
+    color_line: palette[3],
+    color_me_background: palette[0],
+    rename_button_size: 6,
+    rename_button_offset: -2/text_height,
+  });
+
+  // if (game_state) {
+  //   let button_w = CHW * 22;
+  //   if (buttonText({
+  //     x: game_width - button_w - 1,
+  //     w: button_w,
+  //     y: game_height - BUTTON_H - 8,
+  //     text: 'Play ENDLESS MODE...',
+  //   })) {
+  //     game_state.endless_enabled = true;
+  //     queueTransition();
+  //     engine.setState(stateDroneConfig);
+  //   }
+  // }
+}
+
 
 export function main(): void {
   if (platformParameterGet('reload_updates')) {
@@ -1992,16 +2104,16 @@ export function main(): void {
   score_system = scoreAlloc({
     score_to_value: (score: Score): number => {
       return (score.won ? 1 : 0) * (ENCODE_A * ENCODE_B) +
-        (ENCODE_A - 1 - score.days) * ENCODE_B +
-        min(score.money, ENCODE_B - 1);
+        min(score.money, ENCODE_B - 1) * ENCODE_A +
+        max(ENCODE_A - 1 - score.days, 0);
     },
     value_to_score: (value: number): Score => {
-      let money = value % ENCODE_B;
-      value -= money;
-      value = floor(value / ENCODE_B);
       let encode_days = value % ENCODE_A;
       value -= encode_days;
       value = floor(value / ENCODE_A);
+      let money = value % ENCODE_B;
+      value -= money;
+      value = floor(value / ENCODE_B);
       let won = Boolean(value);
       let days = ENCODE_A - 1 - encode_days;
       return {
@@ -2011,8 +2123,8 @@ export function main(): void {
       };
     },
     level_defs: 1,
-    score_key: 'LD58',
-    ls_key: 'ld58',
+    score_key: 'LD58a',
+    ls_key: 'ld58a',
     asc: false,
     rel: 8,
     num_names: 3,
@@ -2029,5 +2141,7 @@ export function main(): void {
   engine.setState(stateTitle);
   if (engine.DEBUG) {
     // stateCraftInit(2);
+    // engine.setState(stateScores);
+    engine.setState(statePrep);
   }
 }

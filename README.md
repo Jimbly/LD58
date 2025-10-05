@@ -16,9 +16,7 @@ Start with: `npm start` (after running `npm i` once)
 
 # TODO
 * Victory screen
-* High scores: won, min days, max wealth
 * Unique icons per skill
-* Show days somewhere on screen
 
 # Abilities draft (need 15 in 3 tools) - add more temperament changes to this
 * L1 Basic: Prog 10, dur 5, no CD
