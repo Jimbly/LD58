@@ -250,6 +250,7 @@ type GameData = {
   skills: (string|null)[];
   max_tier: number; // 2-4 only
   won: boolean;
+  endless: boolean;
   days: number;
   seed: number[];
 };
@@ -294,7 +295,7 @@ const DEFENSE_REDUCTION = [
 ];
 
 function requestValueForTier(tier: number): number {
-  return [0, 100, 1000, 2000, 4000][tier];
+  return [0, 100, 1000, 2000, 4000, 8000][tier];
 }
 
 class GameState {
@@ -355,13 +356,25 @@ class GameState {
       max_tier: 2,
       seed: rand_level.exportState(),
       won: false,
+      endless: false,
       days: 1,
     };
     this.applySkills();
   }
 
   score(): Score {
-    let { won, money, days } = this.data;
+    let { won, money, days, inventory } = this.data;
+    for (let ii = 0; ii < inventory.length; ++ii) {
+      let entry = inventory[ii];
+      if (entry) {
+        let sell_value = requestValueForTier(entry.tier);
+        if (entry.tier > 1) {
+          sell_value /= 2;
+        }
+        money += sell_value;
+      }
+    }
+    money = floor(money / 100);
     return {
       won,
       money,
@@ -462,7 +475,7 @@ class GameState {
     this.progress = 0;
     this.quality = 0;
     this.durability = 100;
-    this.temperament = 1;
+    this.temperament = (0 + rand_craft.range(2)) as 0 | 1;
     this.cooldowns = [];
     for (let ii = 0; ii < 10; ++ii) {
       this.cooldowns.push(0);
@@ -507,6 +520,12 @@ class GameState {
     }
     while (next_up.length < NUM_NEXT) {
       let gem = GEM_TYPES[rand_level.range(GEM_TYPES.length)];
+      if (next_up.length === 2 &&
+        next_up[0].gem === gem &&
+        next_up[1].gem === gem
+      ) {
+        continue;
+      }
       next_up.push({
         gem,
         defense: defenseForType(gem),
@@ -970,7 +989,6 @@ function drawPersonalCollection(): void {
   });
 
   if (did_win && !game_state.data.won) {
-    // TODO: trigger victory!
     game_state.data.won = true;
     game_state.saveGame();
   }
@@ -1904,7 +1922,7 @@ function drawSkillsInPrep(): void {
 }
 
 function drawVictory(): void {
-  if (!game_state.data.won) {
+  if (!game_state.data.won || game_state.data.endless) {
     return;
   }
 
@@ -1952,6 +1970,17 @@ function drawVictory(): void {
   })) {
     // eslint-disable-next-line @typescript-eslint/no-use-before-define
     engine.setState(stateScores);
+  }
+
+  y += BUTTON_H + 4;
+  if (buttonText({
+    x: (game_width - button_w) / 2,
+    y,
+    z,
+    w: button_w,
+    text: 'Keep Playing',
+  })) {
+    game_state.data.endless = true;
   }
 
   panel({
@@ -2110,14 +2139,14 @@ const SCORE_COLUMNS = [
   { name: '', width: 3, align: ALIGN.HFIT | ALIGN.HRIGHT | ALIGN.VCENTER },
   { name: 'Name', width: 12, align: ALIGN.HFIT | ALIGN.VCENTER },
   { name: 'Won', width: 4 },
+  { name: 'Wealth', width: 8 },
   { name: 'Days', width: 4 },
-  { name: 'Money', width: 8 },
 ];
 const style_score = fontStyleColored(null, palette_font[2]);
 const style_me = fontStyleColored(null, palette_font[1]);
 const style_header = fontStyleColored(null, palette_font[2]);
 function myScoreToRow(row: unknown[], score: Score): void {
-  row.push(score.won ? 'Y' : 'N', score.days, `$${score.money}`);
+  row.push(score.won ? 'Y' : 'N', `$${score.money}00`, score.days);
 }
 
 function stateScores(dt: number): void {
@@ -2272,8 +2301,8 @@ export function main(): void {
       };
     },
     level_defs: 1,
-    score_key: 'LD58a',
-    ls_key: 'ld58a',
+    score_key: 'LD58b',
+    ls_key: 'ld58b',
     asc: false,
     rel: 8,
     num_names: 3,
