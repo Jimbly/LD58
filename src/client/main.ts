@@ -14,6 +14,11 @@ import { localStorageGetJSON, localStorageSetJSON } from 'glov/client/local_stor
 import { markdownAuto } from 'glov/client/markdown';
 import { markdownSetColorStyle } from 'glov/client/markdown_renderables';
 import { netInit } from 'glov/client/net';
+import {
+  scoreAlloc,
+  ScoreSystem,
+} from 'glov/client/score';
+// import { scoresDraw } from 'glov/client/score_ui';
 import { spot, SPOT_DEFAULT_LABEL } from 'glov/client/spot';
 import { spriteSetGet } from 'glov/client/sprite_sets';
 import { Sprite, spriteCreate } from 'glov/client/sprites';
@@ -78,6 +83,13 @@ const game_width = 320;
 const game_height = 240;
 
 let font_tiny: Font;
+
+type Score = {
+  won: boolean;
+  days: number;
+  money: number;
+};
+let score_system: ScoreSystem<Score>;
 
 type SkillDef = {
   name: string;
@@ -235,6 +247,8 @@ type GameData = {
   next_up: OreEntry[];
   skills: (string|null)[];
   max_tier: number; // 2-4 only
+  won: boolean;
+  days: number;
   seed: number[];
 };
 
@@ -338,13 +352,25 @@ class GameState {
       skills: [],
       max_tier: 2,
       seed: rand_level.exportState(),
+      won: false,
+      days: 0,
     };
     this.applySkills();
+  }
+
+  score(): Score {
+    let { won, money, days } = this.data;
+    return {
+      won,
+      money,
+      days,
+    };
   }
 
   saveGame(): void {
     this.data.seed = rand_level.exportState();
     localStorageSetJSON('save', this.data);
+    score_system.setScore(0, this.score());
   }
 
   loadGame(): void {
@@ -455,6 +481,7 @@ class GameState {
       this.data.max_tier = clamp(tier, this.data.max_tier, 4);
     }
     this.crafting = -1;
+    this.data.days++;
     // cycle next_up, first ensure anything missing is there now
     let seen: TSMap<boolean> = {};
     for (let ii = 0; ii < next_up.length; ++ii) {
@@ -906,8 +933,10 @@ function drawPersonalCollection(): void {
 
     x += FRAME_H + 2;
   }
-  if (did_win) {
+  if (did_win && !game_state.data.won) {
     // TODO: trigger victory!
+    game_state.data.won = true;
+    game_state.saveGame();
   }
 }
 
@@ -1957,6 +1986,38 @@ export function main(): void {
   setFontHeight(14);
   uiSetPanelColor([1,1,1,1]);
   setPanelPixelScale(1);
+
+  const ENCODE_A = 10000;
+  const ENCODE_B = 1000000;
+  score_system = scoreAlloc({
+    score_to_value: (score: Score): number => {
+      return (score.won ? 1 : 0) * (ENCODE_A * ENCODE_B) +
+        (ENCODE_A - 1 - score.days) * ENCODE_B +
+        min(score.money, ENCODE_B - 1);
+    },
+    value_to_score: (value: number): Score => {
+      let money = value % ENCODE_B;
+      value -= money;
+      value = floor(value / ENCODE_B);
+      let encode_days = value % ENCODE_A;
+      value -= encode_days;
+      value = floor(value / ENCODE_A);
+      let won = Boolean(value);
+      let days = ENCODE_A - 1 - encode_days;
+      return {
+        won,
+        days,
+        money,
+      };
+    },
+    level_defs: 1,
+    score_key: 'LD58',
+    ls_key: 'ld58',
+    asc: false,
+    rel: 8,
+    num_names: 3,
+    histogram: false,
+  });
 
   init();
 
