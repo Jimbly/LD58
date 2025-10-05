@@ -31,7 +31,7 @@ import {
   uiSetPanelColor,
   uiTextHeight,
 } from 'glov/client/ui';
-import { randCreate } from 'glov/common/rand_alea';
+import { randCreate, shuffleArray } from 'glov/common/rand_alea';
 import { TSMap } from 'glov/common/types';
 import { capitalize, clamp, plural } from 'glov/common/util';
 import { palette, palette_font } from './palette';
@@ -146,7 +146,7 @@ const SKILLS: TSMap<SkillDef> = {
     cooldown: CDRARE,
   },
   d5: {
-    name: 'PreciseCarve',
+    name: 'Precise Carve',
     // 50% extra Qual for next 4 turns, CD 14
     special: 'quality',
     special_amount: 50,
@@ -230,6 +230,7 @@ type GameData = {
   requests: Request[];
   next_up: OreEntry[];
   skills: (string|null)[];
+  max_tier: number; // 2-4 only
 };
 
 let rand_level = randCreate(1);
@@ -271,6 +272,10 @@ const DEFENSE_REDUCTION = [
   -50,
 ];
 
+function requestValueForTier(tier: number): number {
+  return tier * 100;
+}
+
 class GameState {
   data: GameData;
   constructor() {
@@ -289,17 +294,18 @@ class GameState {
       requests.push({
         gem,
         tier,
-        value: 100 * tier,
+        value: requestValueForTier(tier),
         done: false,
       });
     }
     for (let ii = 0; ii < NUM_NEXT; ++ii) {
-      let gem = GEM_TYPES[rand_level.range(GEM_TYPES.length)];
+      let gem = GEM_TYPES[ii % GEM_TYPES.length];
       next_up.push({
         gem,
         defense: defenseForType(gem),
       });
     }
+    shuffleArray(next_up, rand_level);
 
     if (engine.DEBUG) {
       money = 9999;
@@ -322,6 +328,7 @@ class GameState {
       requests,
       next_up,
       skills: [],
+      max_tier: 2,
     };
     this.applySkills();
   }
@@ -401,7 +408,7 @@ class GameState {
   }
   finishCrafting(): void {
     let { durability, quality, progress, crafting } = this;
-    let { inventory, next_up } = this.data;
+    let { inventory, next_up, requests } = this.data;
 
     let target = next_up[crafting];
     if (durability >= 0 && progress >= 100) {
@@ -410,10 +417,71 @@ class GameState {
         gem: target.gem,
         tier,
       });
+      this.data.max_tier = clamp(tier, this.data.max_tier, 4);
     }
     this.crafting = -1;
-    // todo: cycle next_up
-    // todo: cycle requests that don't match what we just crafted
+    // cycle next_up, first ensure anything missing is there now
+    let seen: TSMap<boolean> = {};
+    for (let ii = 0; ii < next_up.length; ++ii) {
+      let entry = next_up[ii];
+      seen[entry.gem] = true;
+    }
+    next_up = [];
+    for (let ii = 0; ii < GEM_TYPES.length; ++ii) {
+      let gem = GEM_TYPES[ii];
+      if (!seen[gem]) {
+        next_up.push({
+          gem,
+          defense: defenseForType(gem),
+        });
+      }
+    }
+    while (next_up.length < NUM_NEXT) {
+      let gem = GEM_TYPES[rand_level.range(GEM_TYPES.length)];
+      next_up.push({
+        gem,
+        defense: defenseForType(gem),
+      });
+    }
+    shuffleArray(next_up, rand_level);
+    this.data.next_up = next_up;
+
+    let any_done = Boolean(requests.find((a) => a.done));
+    if (!any_done) {
+      // none completed, cycle one which is not satisfied
+      let options = [];
+      for (let ii = 3; ii < requests.length; ++ii) {
+        let entry = requests[ii];
+        if (!entry.done && this.satisfiesRequest(entry) === null) {
+          options.push(ii);
+        }
+      }
+      if (!options.length) {
+        // all are satisfied, cycle one that is a different color than what we just got
+        for (let ii = 3; ii < requests.length; ++ii) {
+          let entry = requests[ii];
+          if (!entry.done && entry.gem !== target.gem) {
+            options.push(ii);
+          }
+        }
+      }
+      if (options.length) {
+        let idx = options[rand_level.range(options.length)];
+        requests[idx].done = true;
+      }
+    }
+    for (let ii = 3; ii < requests.length; ++ii) {
+      let entry = requests[ii];
+      if (entry.done) {
+        let tier = 2 + rand_level.range(this.data.max_tier - 2 + 1);
+        requests[ii] = {
+          gem: GEM_TYPES[rand_level.range(GEM_TYPES.length)],
+          tier,
+          value: requestValueForTier(tier),
+          done: false,
+        };
+      }
+    }
   }
   skillBonuses(skill_index: number): {
     progress: number;
@@ -1214,9 +1282,10 @@ function drawSkill(x: number, y: number, ii: number, as_button: boolean, tooltip
     x += 3;
     w -= 6;
     y += 1;
-    font.draw({
+    markdownAuto({
+      font_style: font_style_tooltip,
       x, y, z, w,
-      text: `${capitalize(tool_type)} #${skill_id[1]}: ${skill.name}`,
+      text: `${capitalize(tool_type)} #${skill_id[1]}: [c=white]${skill.name}[/c]`,
       align: ALIGN.HCENTER,
     });
     y += yadv;
@@ -1705,6 +1774,6 @@ export function main(): void {
 
   engine.setState(statePrep);
   if (engine.DEBUG) {
-    stateCraftInit(2);
+    // stateCraftInit(2);
   }
 }
