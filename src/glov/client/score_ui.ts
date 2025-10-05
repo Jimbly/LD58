@@ -210,6 +210,7 @@ export function scoresDraw<ScoreType>({
       scroll_area: scrollAreaCreate({
         background_color: null,
         auto_hide: true,
+        pixel_scale: 13/16, // LD58
       }),
     };
   });
