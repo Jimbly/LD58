@@ -61,7 +61,7 @@ const NUM_COLLECTOR = 6;
 const NUM_NEXT = 3;
 const COLLECTOR_X = 17;
 const COLLECTOR_W = 64;
-const COLLECTOR_Y = 12;
+const COLLECTOR_Y = 9;
 const NEXTUP_X = 254;
 const NEXTUP_Y = COLLECTOR_Y;
 const NEXTUP_W = 54;
@@ -89,13 +89,13 @@ type SkillDef = {
 const CDRARE = 14;
 const SKILLS: TSMap<SkillDef> = {
   l1: {
-    name: 'Basic',
+    name: 'Radiant Blast',
     // Prog 100 in 40-50 dur
     progress: [11, 13], // ratio 2.4
     durability: 5,
   },
   l2: {
-    name: 'Polish',
+    name: 'Luminous Incision',
     // Qual 100 in 45 dur, CD, temp -
     quality: [34,36],  // ratio 2.333 (temp-)
     durability: 15,
@@ -103,34 +103,34 @@ const SKILLS: TSMap<SkillDef> = {
     temperament: -1,
   },
   d1: {
-    name: 'Basic',
+    name: 'Earth Shatter',
     // Prog 100 in 50
     progress: [21, 23], // ratio 2.2
     durability: 10,
   },
   d2: {
-    name: 'Polish',
+    name: 'Harmonic Boring',
     // Qual 100 in 50, CD
     quality: [23,25], // ratio 2.67 (but rounds poorly)
     durability: 9,
     cooldown: 1,
   },
   a1: {
-    name: 'Basic',
+    name: 'Temper Alignment',
     // Prog 100 in 60, temp +
     progress: [28, 30], // 2.0
     durability: 15,
     temperament: 2,
   },
   a2: {
-    name: 'Polish',
+    name: 'Virtuous Distillation',
     // Qual 100 in 35-50, high variance
     quality: [10, 15], // ratio 2.5, variance
     durability: 5,
   },
 
   d3: {
-    name: 'Hasty',
+    name: 'Dashing Strike',
     progress: [50, 55],
     durability: 24,
     cooldown: 3,
@@ -145,7 +145,7 @@ const SKILLS: TSMap<SkillDef> = {
     temperament: 1,
   },
   d5: {
-    name: 'Precise Carve',
+    name: 'Stone Sense',
     // 50% extra Qual for next 4 turns, CD 14
     special: 'quality',
     special_amount: 75,
@@ -167,7 +167,7 @@ const SKILLS: TSMap<SkillDef> = {
     cooldown: 5,
   },
   l5: {
-    name: 'Focus',
+    name: 'Laser Focus',
     // 200% extra Qual for next 1 turn
     special: 'quality',
     special_amount: 200,
@@ -189,7 +189,7 @@ const SKILLS: TSMap<SkillDef> = {
     cooldown: CDRARE,
   },
   a5: {
-    name: 'Reinforce',
+    name: 'Precision',
     // 50% less dur for next 4 steps, CD 14
     special: 'durability',
     special_amount: -50,
@@ -272,7 +272,7 @@ const DEFENSE_REDUCTION = [
 ];
 
 function requestValueForTier(tier: number): number {
-  return tier * 100;
+  return [0, 100, 1000, 2000, 4000][tier];
 }
 
 class GameState {
@@ -349,33 +349,47 @@ class GameState {
       }
     }
 
-    let seen: TSMap<true> = {};
     let tooltype: keyof typeof tool_tiers;
-    let need: string[] = [];
-    for (tooltype in tool_tiers) {
-      let count = tool_tiers[tooltype];
-      for (let ii = 1; ii <= count; ++ii) {
-        let key = `${tooltype[0].toLowerCase()}${ii}`;
-        if (SKILLS[key]) {
-          if (skills.includes(key)) {
-            seen[key] = true;
-          } else {
-            need.push(key);
+    if (0) {
+      let seen: TSMap<true> = {};
+      let need: string[] = [];
+      for (tooltype in tool_tiers) {
+        let count = tool_tiers[tooltype];
+        for (let ii = 1; ii <= count; ++ii) {
+          let key = `${tooltype[0].toLowerCase()}${ii}`;
+          if (SKILLS[key]) {
+            if (skills.includes(key)) {
+              seen[key] = true;
+            } else {
+              need.push(key);
+            }
           }
         }
       }
-    }
-    need.reverse();
-    for (let ii = 0; ii < skills.length; ++ii) {
-      if (skills[ii] && !seen[skills[ii]!]) {
-        skills[ii] = null;
+      need.reverse();
+      for (let ii = 0; ii < skills.length; ++ii) {
+        if (skills[ii] && !seen[skills[ii]!]) {
+          skills[ii] = null;
+        }
+        if (!skills[ii] && need.length) {
+          skills[ii] = need.pop()!;
+        }
       }
-      if (!skills[ii] && need.length) {
-        skills[ii] = need.pop()!;
+      while (need.length) {
+        skills.push(need.pop()!);
       }
-    }
-    while (need.length) {
-      skills.push(need.pop()!);
+    } else {
+      // simple, sorted replace
+      skills.length = 0;
+      for (tooltype in tool_tiers) {
+        let count = tool_tiers[tooltype];
+        for (let ii = 1; ii <= count; ++ii) {
+          let key = `${tooltype[0].toLowerCase()}${ii}`;
+          if (SKILLS[key]) {
+            skills.push(key);
+          }
+        }
+      }
     }
   }
 
@@ -612,15 +626,27 @@ class GameState {
     return best;
   }
 
+  toolTier(tool_type: ToolType): number {
+    let { tools } = this.data;
+    let ret = 0;
+    for (let ii = 0; ii < tools.length; ++ii) {
+      let tool = tools[ii];
+      if (tool && tool.tool === tool_type) {
+        ret += tool.tier;
+      }
+    }
+    return ret;
+  }
+
   upgradeCost(tool: ToolType, cur_tier: number): {
     gem: GemType;
     gem_tier: number;
     money: number;
   } {
     return {
-      money: [0, 200, 400, 800, 1600][cur_tier],
+      money: [0, 200, 1500, 3000, 5000][cur_tier],
       gem: tool === 'drill' ? 'emerald' : tool === 'laser' ? 'sapphire' : 'ruby',
-      gem_tier: [0, 1, 1, 2, 2][cur_tier],
+      gem_tier: [0, 1, 2, 2, 3][cur_tier],
     };
   }
   upgradeCanAfford(tool_index: number): number | null {
@@ -654,7 +680,7 @@ class GameState {
     this.applySkills();
   }
   trashTool(tool_index: number): void {
-    this.data.tools[tool_index] = null;
+    this.data.tools.splice(tool_index, 1);
     this.applySkills();
   }
   buyTool(tool_index: number, tool_type: ToolType): void {
@@ -1031,11 +1057,14 @@ function drawTools(): void {
     } else {
       let upgrade_cost = game_state.upgradeCost(tool.tool, tool.tier);
       let can_afford = game_state.upgradeCanAfford(ii);
+      let tooltip_warn = game_state.toolTier(tool.tool) >= 5 ?
+        `\n\nWARNING: Your already have all 5 ${capitalize(tool.tool)} Skills unlocked, upgrading` +
+        ' this tool will not unlock additional skills.' : '';
       if (button({
         x, y, w: BUTTON_H, h: BUTTON_H,
         disabled: can_afford === null || tool_count >= 10,
         img: autoAtlas('game', 'upgrade'),
-        tooltip: 'Upgrade tool, unlocking a new skill, paying the cost listed to the right',
+        tooltip: `Upgrade tool, unlocking a new skill, paying the cost listed to the right.${tooltip_warn}`,
         disabled_focusable: true,
       })) {
         // playUISound('upgrade');
@@ -1680,7 +1709,7 @@ function drawNextUp(): void {
   }
 }
 
-const SKILLS_Y = 178;
+const SKILLS_Y = 175;
 const SKILLS_W = BUTTON_H * 5 + 4;
 const SKILLS_X = floor((game_width - SKILLS_W)/2);
 function drawSkillsInPrep(): void {
@@ -1779,6 +1808,6 @@ export function main(): void {
 
   engine.setState(statePrep);
   if (engine.DEBUG) {
-    stateCraftInit(2);
+    // stateCraftInit(2);
   }
 }

@@ -1,7 +1,9 @@
 LD58 - Collector
 ============================
 
-Ludum Dare 58 Entry by Jimbly - "Title TBD"
+Ludum Dare 58 Entry by Jimbly - "Gemwright"
+
+Extract high quality gems from ore in this turn-based crafting game.
 
 * Play here: [dashingstrike.com/LudumDare/LD58/](http://www.dashingstrike.com/LudumDare/LD58/)
 * Using [Javascript libGlov/GLOV.js framework](https://github.com/Jimbly/glovjs)
@@ -13,6 +15,10 @@ Acknowledgements:
 Start with: `npm start` (after running `npm i` once)
 
 # TODO
+* Title screen - load / new game
+* Victory screen
+* High scores: won, min days, max wealth
+* Unique icons per skill
 
 # Abilities draft (need 15 in 3 tools) - add more temperament changes to this
 * L1 Basic: Prog 10, dur 5, no CD
