@@ -7,9 +7,10 @@ import assert from 'assert';
 import { autoAtlas } from 'glov/client/autoatlas';
 import { platformParameterGet } from 'glov/client/client_config';
 import * as engine from 'glov/client/engine';
-import { ALIGN, Font, fontCreate, fontStyle, fontStyleColored } from 'glov/client/font';
+import { ALIGN, Font, fontCreate, FontStyle, fontStyle, fontStyleColored } from 'glov/client/font';
 import { KEYS } from 'glov/client/input';
 import { markdownAuto } from 'glov/client/markdown';
+import { markdownSetColorStyle } from 'glov/client/markdown_renderables';
 import { netInit } from 'glov/client/net';
 import { spot, SPOT_DEFAULT_LABEL } from 'glov/client/spot';
 import { spriteSetGet } from 'glov/client/sprite_sets';
@@ -20,6 +21,7 @@ import {
   buttonWasFocused,
   drawBox,
   drawHBox,
+  label,
   panel,
   scaleSizes,
   setFontHeight,
@@ -31,7 +33,7 @@ import {
 } from 'glov/client/ui';
 import { randCreate } from 'glov/common/rand_alea';
 import { TSMap } from 'glov/common/types';
-import { clamp, plural } from 'glov/common/util';
+import { capitalize, clamp, plural } from 'glov/common/util';
 import { palette, palette_font } from './palette';
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -88,45 +90,45 @@ const CDRARE = 14;
 const SKILLS: TSMap<SkillDef> = {
   l1: {
     name: 'Basic',
-    // Prog 10, dur 5, no CD
-    progress: [10, 11],
+    // Prog 100 in 40-50 dur
+    progress: [11, 13], // ratio 2.4
     durability: 5,
-  },
-  d1: {
-    name: 'Basic',
-    // Prog 18, dur 10, no CD
-    progress: [17, 19],
-    durability: 10,
-  },
-  a1: {
-    name: 'Basic',
-    // Prog 24, dur 15, no CD, temp +
-    progress: [23, 25],
-    durability: 15,
-    temperament: 1,
   },
   l2: {
     name: 'Polish',
-    // Qual 34, dur 20, CD 1, temp -
-    quality: [33,35],
-    durability: 20,
-    cooldown: 1,
+    // Qual 100 in 45 dur, CD, temp -
+    quality: [34,36],  // ratio 2.333 (temp-)
+    durability: 15,
+    cooldown: 2,
     temperament: -1,
+  },
+  d1: {
+    name: 'Basic',
+    // Prog 100 in 50
+    progress: [21, 23], // ratio 2.2
+    durability: 10,
   },
   d2: {
     name: 'Polish',
-    // Qual 20, dur 10, CD 1
-    quality: [19,22],
+    // Qual 100 in 50, CD
+    quality: [22,24], // ratio 2.3
     durability: 10,
     cooldown: 1,
   },
+  a1: {
+    name: 'Basic',
+    // Prog 100 in 60, temp +
+    progress: [28, 30], // 2.0
+    durability: 15,
+    temperament: 1,
+  },
   a2: {
     name: 'Polish',
-    // Qual 12, dur 5, CD 1
-    quality: [11, 13],
+    // Qual 100 in 35-50, high variance
+    quality: [10, 15], // ratio 2.5, variance
     durability: 5,
-    cooldown: 1,
   },
+
   d3: {
     name: 'Hasty',
     // Prog 60, dur 10, 50%, CD 3
@@ -265,7 +267,7 @@ const TEMPERAMENT_BONUS = {
 const DEFENSE_REDUCTION = [
   0,
   -10,
-  -25,
+  -35,
   -50,
 ];
 
@@ -280,7 +282,7 @@ class GameState {
     let money = 0;
     let requests: Request[] = [];
     let next_up: OreEntry[] = [];
-    rand_level.reseed(1234);
+    rand_level.reseed(123456);
     for (let ii = 0; ii < NUM_COLLECTOR; ++ii) {
       let tier = ii < 3 ? 1 : 2;
       let gem = ii < 3 ? GEM_TYPES[ii] : GEM_TYPES[rand_level.range(GEM_TYPES.length)];
@@ -309,7 +311,7 @@ class GameState {
       }
       tools[0].tier = 5;
       tools.push({
-        tool: 'acid',
+        tool: 'drill',
         tier: 5,
       });
     }
@@ -398,11 +400,11 @@ class GameState {
     this.specials = [];
   }
   finishCrafting(): void {
-    let { durability, quality, crafting } = this;
+    let { durability, quality, progress, crafting } = this;
     let { inventory, next_up } = this.data;
 
     let target = next_up[crafting];
-    if (durability > 0) {
+    if (durability >= 0 && progress >= 100) {
       let tier = floor(quality / 100) + 1;
       inventory.push({
         gem: target.gem,
@@ -472,7 +474,7 @@ class GameState {
     if (skill.cooldown) {
       cooldowns[skill_index] = skill.cooldown;
     }
-    this.durability = clamp(round(this.durability - (skill.durability || 0) * special_mul.durability), 0, 100);
+    this.durability = clamp(round(this.durability - (skill.durability || 0) * special_mul.durability), -100, 100);
 
     if (skill.success) {
       if (rand_craft.range(100) >= skill.success) {
@@ -1031,7 +1033,7 @@ function drawTools(): void {
   }
 }
 
-function drawOreCard(x: number, y: number, w: number, entry: OreEntry): number {
+function drawOreCard(x: number, y: number, w: number, entry: OreEntry, do_tooltips: boolean): number {
   autoAtlas('game', 'item-oreframe').draw({
     x: x + (w - FRAME_H)/2,
     y,
@@ -1057,12 +1059,22 @@ function drawOreCard(x: number, y: number, w: number, entry: OreEntry): number {
       y, w: IMG_H, h: IMG_H,
     });
     xx += IMG_H + PAD1;
-    for (let jj = 0; jj < entry.defense[tool]; ++jj) {
+    let def = entry.defense[tool];
+    for (let jj = 0; jj < def; ++jj) {
       autoAtlas('game', 'defense').draw({
         x: xx,
         y, w: IMG_H, h: IMG_H,
       });
       xx += RES_STEP + 1;
+    }
+    if (do_tooltips && def) {
+      label({
+        x, y, w,
+        h: IMG_H + 1,
+        text: '',
+        tooltip: ` [c=red]${DEFENSE_REDUCTION[def]}%[/c] Progress from [c=${
+          tool === 'laser' ? 'red' : tool === 'drill' ? 'white' : 'green'}]${capitalize(tool)}[/c] Skills `,
+      });
     }
     y += IMG_H + 1;
   }
@@ -1094,13 +1106,17 @@ const FONT_OUTLINE = {
   outline_color: palette_font[PAL_BLACK],
   outline_width: 2.5,
 };
-const font_styles_tooltip = {
+const font_styles_tooltip: TSMap<FontStyle> = {
   red: fontStyle(null, {
     color: palette_font[PAL_RED],
     ...FONT_OUTLINE,
   }),
   green: fontStyle(null, {
     color: palette_font[PAL_GREEN],
+    ...FONT_OUTLINE,
+  }),
+  white: fontStyle(null, {
+    color: palette_font[PAL_WHITE],
     ...FONT_OUTLINE,
   }),
   cyan: fontStyle(null, {
@@ -1200,7 +1216,7 @@ function drawSkill(x: number, y: number, ii: number, as_button: boolean, tooltip
     y += 1;
     font.draw({
       x, y, z, w,
-      text: `${tool_type[0].toUpperCase()}${tool_type.slice(1)} #${skill_id[1]}: ${skill.name}`,
+      text: `${capitalize(tool_type)} #${skill_id[1]}: ${skill.name}`,
       align: ALIGN.HCENTER,
     });
     y += yadv;
@@ -1320,6 +1336,7 @@ function stateCraft(dt: number): void {
   let { durability, progress, quality } = game_state;
 
   let done = progress >= 100 || durability <= 0;
+  let done_good = done && (durability >= 0 && progress >= 100);
 
   let target = next_up[crafting];
   const PADTOP = 5;
@@ -1338,7 +1355,7 @@ function stateCraft(dt: number): void {
       w: 52,
       h: 62,
     });
-    if (durability > 0) {
+    if (done_good) {
       let xx = x + (w - FRAME_H*2)/2;
       let yy = y + 10;
       drawBox({
@@ -1365,7 +1382,7 @@ function stateCraft(dt: number): void {
     }
   }
   y += 3;
-  y = drawOreCard(x, y, w, target);
+  y = drawOreCard(x, y, w, target, true);
   y += 2;
   panel({
     x, y: y0,
@@ -1376,6 +1393,18 @@ function stateCraft(dt: number): void {
   });
 
   y += 4;
+  let tempbonus = TEMPERAMENT_BONUS[temperament];
+  label({
+    x, y,
+    w,
+    h: text_height * 2 - 4,
+    // eslint-disable-next-line prefer-template
+    tooltip: `${TEMP[temperament + 1][1]} Temperament:` +
+      (tempbonus ?
+        `\n [c=${tempbonus < 0 ? 'red' : tempbonus > 0 ? 'green' : '0'}]${tempbonus > 0 ? '+' : ''}${tempbonus}%[/c]` +
+        ' to Progress and Quality ' : '\n No bonus or penalty'),
+    text: '',
+  });
   font.draw({
     color: palette_font[done ? PAL_WHITE + 3 : PAL_WHITE],
     x, y, w,
@@ -1397,12 +1426,12 @@ function stateCraft(dt: number): void {
   if (done) {
     // done
     font.draw({
-      color: palette_font[durability > 0 ? PAL_GREEN : PAL_RED],
+      color: palette_font[done_good ? PAL_GREEN : PAL_RED],
       x, y,
       w: floor(w/3),
       h: BUTTON_H,
       align: ALIGN.HVCENTER | ALIGN.HWRAP,
-      text: durability > 0 ? 'Crafting\ncomplete!' : 'Crafting\nfailed',
+      text: done_good ? 'Crafting\ncomplete!' : 'Crafting\nfailed',
     });
     if (buttonText({
       x: x + floor(w/3),
@@ -1498,7 +1527,7 @@ function stateCraft(dt: number): void {
         w: vw,
       }, autoAtlas('game', pair[3]));
     } else {
-      if (text === 'Durability' && !v) {
+      if (text === 'Durability' && v < 0) {
         // draw nothing
       } else {
         drawHBox({
@@ -1533,6 +1562,7 @@ function stateCraft(dt: number): void {
   panel({
     ...MAIN_PANEL,
     eat_clicks: false,
+    sprite: autoAtlas('game', 'panel_blue'),
   });
 }
 
@@ -1560,7 +1590,7 @@ function drawNextUp(): void {
     let entry = next_up[ii];
     let y0 = y;
     y += 3;
-    y = drawOreCard(x, y, w, entry);
+    y = drawOreCard(x, y, w, entry, false);
     y += 4;
 
     if (button({
@@ -1669,8 +1699,12 @@ export function main(): void {
 
   init();
 
+  for (let key in font_styles_tooltip) {
+    markdownSetColorStyle(key, font_styles_tooltip[key]!);
+  }
+
   engine.setState(statePrep);
   if (engine.DEBUG) {
-    stateCraftInit(0);
+    stateCraftInit(2);
   }
 }
