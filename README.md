@@ -17,9 +17,9 @@ Start with: `npm start` (after running `npm i` once)
 # TODO
 * Play all the way through
 # Stretch
-* Animate progress
 * Sound effects - ascending scaled for each of prog/qual?
 * Music
+* Animate quality tier transitions
 # Publish
 * Social share image
 * Screenshots / cover image

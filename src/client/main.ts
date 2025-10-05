@@ -5,6 +5,7 @@ local_storage.setStoragePrefix('ld58'); // Before requiring anything else that m
 
 import assert from 'assert';
 import { AnimationSequencer, animationSequencerCreate } from 'glov/client/animation';
+import { autoResetSkippedFrames } from 'glov/client/auto_reset';
 import { autoAtlas } from 'glov/client/autoatlas';
 import { platformParameterGet } from 'glov/client/client_config';
 import * as engine from 'glov/client/engine';
@@ -43,7 +44,7 @@ import {
 } from 'glov/client/ui';
 import { randCreate, shuffleArray } from 'glov/common/rand_alea';
 import { TSMap } from 'glov/common/types';
-import { capitalize as capitalizeOrig, clamp, plural } from 'glov/common/util';
+import { capitalize as capitalizeOrig, clamp, easeOut, lerp, plural } from 'glov/common/util';
 import { v3copy } from 'glov/common/vmath';
 import { palette, palette_font } from './palette';
 
@@ -98,6 +99,31 @@ type Score = {
   money: number;
 };
 let score_system: ScoreSystem<Score>;
+
+let blend_data: TSMap<{
+  blend_start: number;
+  blend_start_value: number;
+  last_value: number;
+}> = {};
+function blend(key: string, value: number): number {
+  let bd = blend_data[key];
+  if (!bd || autoResetSkippedFrames(key)) {
+    bd = blend_data[key] = {
+      blend_start: engine.frame_timestamp,
+      blend_start_value: value,
+      last_value: value,
+    };
+  }
+  let dt = engine.frame_timestamp - bd.blend_start;
+  let w = min(dt / 500, 1);
+  let v = lerp(easeOut(w, 2), bd.blend_start_value, bd.last_value);
+  if (value !== bd.last_value) {
+    bd.blend_start_value = v;
+    bd.blend_start = engine.frame_timestamp - 16;
+    bd.last_value = value;
+  }
+  return round(v);
+}
 
 type SkillDef = {
   name: string;
@@ -1004,7 +1030,7 @@ function drawInventory(): void {
     color: palette_font[PAL_GREEN],
     x, y, w,
     align: ALIGN.HRIGHT,
-    text: `$${money}`,
+    text: `$${blend('money', money)}`,
   });
   y += text_height + 3;
 
@@ -1700,12 +1726,12 @@ function stateCraft(dt: number): void {
       tooltip: pair[4],
     });
 
-    let v = pair[2];
+    let v = blend(pair[0], pair[2]);
     let vw = clamp(3 + round(v/100 * (BAR_MAX_W - 3)), 3, v === 100 ? BAR_MAX_W : BAR_MAX_W - 1);
 
     let text: string = pair[0];
     if (text === 'Quality') {
-      let tier = min(4, floor(quality / 100));
+      let tier = min(4, floor(v / 100));
       text = `Quality (T${tier+1})`;
       const GOAL_X = floor(BAR_MAX_W * 0.9) + tier * 3;
       // draw goal
@@ -2306,8 +2332,8 @@ export function main(): void {
   stateTitleInit();
   engine.setState(stateTitle);
   if (engine.DEBUG) {
-    // stateCraftInit(2);
+    stateCraftInit(2);
     // engine.setState(stateScores);
-    engine.setState(statePrep);
+    //engine.setState(statePrep);
   }
 }
