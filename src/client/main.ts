@@ -845,11 +845,10 @@ function startNewGame(): void {
   engine.setState(statePrep);
 }
 
-const TRANSITION_TIME = 250;
+const TRANSITION_TIME = 120;
 function queueTransition(): void {
-  // Why isn't this working?
-  if (engine.getFrameIndex() > 1) {
-    transition.queue(Z.TRANSITION_FINAL, fade.bind(null, TRANSITION_TIME));
+  if (engine.getFrameIndex() > 1 && !engine.defines.COMPO) {
+    transition.queue(Z.TRANSITION_FINAL, fade(TRANSITION_TIME));
   }
 }
 
@@ -1812,6 +1811,7 @@ function stateCraft(dt: number): void {
       hotkeys: [KEYS.SPACE, KEYS.ENTER, KEYS.ESCAPE],
     })) {
       game_state.finishCrafting();
+      queueTransition();
       // eslint-disable-next-line @typescript-eslint/no-use-before-define
       engine.setState(statePrep);
     }
@@ -2106,6 +2106,7 @@ function drawVictory(): void {
     w: button_w,
     text: 'View High Scores',
   })) {
+    queueTransition();
     // eslint-disable-next-line @typescript-eslint/no-use-before-define
     engine.setState(stateScores);
   }
