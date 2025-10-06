@@ -2426,7 +2426,7 @@ function stateScores(dt: number): void {
 
 
 export function main(): void {
-  if (platformParameterGet('reload_updates')) {
+  if (platformParameterGet('reload_updates') && engine.DEBUG) {
     // Enable auto-reload, etc
     netInit({ engine });
   }
