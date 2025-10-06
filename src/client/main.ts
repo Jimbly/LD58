@@ -2447,7 +2447,7 @@ export function main(): void {
   }
 
   let sounds: UISounds = {};
-  for (let ii = 0; ii < 11; ++ii) {
+  for (let ii = 1; ii < 10; ++ii) {
     for (let jj = 1; jj <= 2; ++jj) {
       let key = `scale${jj}-${ii}`;
       sounds[key] = key;
