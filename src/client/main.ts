@@ -385,7 +385,7 @@ class GameState {
       for (let ii = 0; ii < 12; ++ii) {
         inventory.push({
           gem: GEM_TYPES[ii % GEM_TYPES.length], // rand_level.range(GEM_TYPES.length)],
-          tier: 4, //1 + rand_level.range(5),
+          tier: 1 + rand_level.range(5),
         });
       }
       tools[0].tier = 1;
@@ -762,7 +762,7 @@ class GameState {
       let entry = inventory[ii];
       if (entry && entry.gem === req.gem && entry.tier >= req.tier) {
         // valid
-        if (!best || entry.tier < inventory[best]!.tier) {
+        if (best === null || entry.tier < inventory[best]!.tier) {
           best = ii;
         }
       }
@@ -923,7 +923,7 @@ function drawCollector(): void {
       w: FRAME_H,
       h: FRAME_H,
     };
-    drawBox(framepos, autoAtlas('game', satisfies_request && !entry.done ? 'item-border' : 'item-empty'), 1);
+    drawBox(framepos, autoAtlas('game', satisfies_request !== null && !entry.done ? 'item-border' : 'item-empty'), 1);
     framepos.z++;
     autoAtlas('game', entry.gem).draw({
       x: x + IMG_PAD - FRAME_PAD,
@@ -940,7 +940,7 @@ function drawCollector(): void {
     });
     x += FRAME_H + 2;
     font.draw({
-      color: palette_font[entry.done ? PAL_BLACK - 2 : satisfies_request ? PAL_YELLOW : PAL_GREEN],
+      color: palette_font[entry.done ? PAL_BLACK - 2 : satisfies_request !== null ? PAL_YELLOW : PAL_GREEN],
       x, y, h: BUTTON_H,
       align: ALIGN.VCENTER,
       text: `$${entry.value}`,
