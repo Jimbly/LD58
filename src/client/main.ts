@@ -388,14 +388,14 @@ class GameState {
           tier: 1 + rand_level.range(5),
         });
       }
-      tools[0].tier = 1;
-      // tools.push({
-      //   tool: 'drill',
-      //   tier: 3,
-      // }, {
-      //   tool: 'acid',
-      //   tier: 5,
-      // });
+      tools[0].tier = 5;
+      tools.push({
+        tool: 'drill',
+        tier: 5,
+      }, {
+        tool: 'acid',
+        tier: 5,
+      });
     }
     this.data = {
       inventory,
@@ -1734,7 +1734,7 @@ function stateCraft(dt: number): void {
         w: IMG_H * 2,
         h: IMG_H * 2,
       });
-      autoAtlas('game', `tier${floor(quality/100)+1}`).draw({
+      autoAtlas('game', `tier${min(5, floor(quality/100)+1)}`).draw({
         x: xx,
         y: yy,
         z: Z.UI + 13,
